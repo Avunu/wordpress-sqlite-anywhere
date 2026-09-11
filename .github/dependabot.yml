@@ -30,7 +30,9 @@ updates:
       composer:
         patterns: ["*"]
 
-  # The bundled driver's test tooling (PHPUnit 9 + WPCS).
+  # The bundled driver's test tooling (PHPUnit 9 + WPCS). Upstream's suites use
+  # PHPUnit 8/9 APIs (@dataProvider annotations, getName()), and WordPress
+  # Coding Standards needs PHP_CodeSniffer 3.x: neither may move a major.
   - package-ecosystem: composer
     directory: /driver-tests/tools-project
     schedule:
@@ -40,6 +42,11 @@ updates:
     groups:
       driver-tools:
         patterns: ["*"]
+    ignore:
+      - dependency-name: phpunit/phpunit
+        update-types: ["version-update:semver-major"]
+      - dependency-name: squizlabs/php_codesniffer
+        update-types: ["version-update:semver-major"]
 
   # The Rust crates.
   - package-ecosystem: cargo
@@ -62,7 +69,9 @@ updates:
       d1-client:
         patterns: ["*"]
 
-  # The D1 proxy worker.
+  # The D1 proxy worker. Its vitest config predates the Vite-plugin form that
+  # @cloudflare/vitest-pool-workers 0.20+ (Vitest 4) requires; until it is
+  # migrated, majors of the test stack stay put.
   - package-ecosystem: npm
     directory: /packages/d1-proxy-worker
     schedule:
@@ -72,6 +81,11 @@ updates:
     groups:
       npm:
         patterns: ["*"]
+    ignore:
+      - dependency-name: vitest
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@cloudflare/vitest-pool-workers"
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
 
   # flake.lock inputs.
   - package-ecosystem: nix
