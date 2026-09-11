@@ -1,0 +1,43 @@
+includes:
+    # Bootstraps php-stubs/wordpress-stubs and adds WordPress-aware rules
+    # (hook callback signatures, dynamic return types, WP constants).
+    - vendor/szepeviktor/phpstan-wordpress/extension.neon
+
+parameters:
+    level: 8
+    phpVersion: 80500
+    paths:
+        - wordpress-sqlite-anywhere.php
+        - db.copy
+        - src/
+        - plugin/
+        - tests/
+    # The upstream driver's classes (WP_SQLite_Driver, WP_MySQL_On_SQLite, the
+    # connection interface's siblings, ...) are what driver/ implements against.
+    # They are scanned, never analysed: upstream's code is upstream's problem.
+    # The path is the assembled tree; `composer assemble` produces it locally,
+    # and the Nix check substitutes the store path.
+    scanDirectories:
+        - build/packages/mysql-on-sqlite/src
+        - build/packages/plugin-sqlite-database-integration/wp-includes/sqlite
+        - build/packages/plugin-sqlite-database-integration/integrations
+    bootstrapFiles:
+        - phpstan-bootstrap.php
+    # Environment constants that may or may not be defined at runtime.
+    dynamicConstantNames:
+        - WP_CLI
+        - DB_ENGINE
+        - DB_NAME
+        - DATABASE_TYPE
+        - SQLITE_DB_DROPIN_VERSION
+        - SQLITE_MAIN_FILE
+    # PHPDoc types on third-party boundaries are not runtime-enforced; keep
+    # defensive null handling without false positives.
+    treatPhpDocTypesAsCertain: false
+    ignoreErrors:
+        # PucFactory::buildUpdateChecker() is typed as a broad union; narrowing it
+        # would require referencing the version-suffixed (v5pX) class names, which
+        # break on every plugin-update-checker minor release.
+        -
+            message: '#Call to an undefined method YahnisElsts\\PluginUpdateChecker.*#'
+            path: wordpress-sqlite-anywhere.php

@@ -1,0 +1,58 @@
+<?xml version="1.0"?>
+<!--
+    PSR-12 for the house-style code: the main plugin file, the drop-in shim,
+    src/ and tests/.
+
+    driver/, driver-tests/ and plugin/ overlay upstream's namespace-less
+    driver and follow its WordPress coding standard instead; see
+    phpcs-driver.xml.dist. WPCS needs PHP_CodeSniffer 3.x while nixpkgs ships
+    4.x, so that ruleset runs through the composer project in
+    driver-tests/tools-project/.
+
+    Run through Nix:
+      nix build .#checks.x86_64-linux.phpcs -L
+-->
+<ruleset name="wordpress-sqlite-anywhere">
+    <description>PSR-12 for the plugin source and its tests.</description>
+
+    <file>wordpress-sqlite-anywhere.php</file>
+    <file>db.copy</file>
+    <file>src</file>
+    <file>tests</file>
+    <file>phpstan-bootstrap.php</file>
+
+    <exclude-pattern>*/vendor/*</exclude-pattern>
+    <exclude-pattern>*/node_modules/*</exclude-pattern>
+
+    <arg name="extensions" value="php,copy/php"/>
+    <arg name="basepath" value="."/>
+    <arg name="colors"/>
+    <arg value="sp"/>
+
+    <!-- Warnings are advisory; only errors fail the build. -->
+    <config name="ignore_warnings_on_exit" value="1"/>
+    <ini name="memory_limit" value="1G"/>
+    <arg name="report-width" value="120"/>
+
+    <rule ref="PSR12"/>
+
+    <!--
+        Entry points exist to cause side effects: the main file registers the
+        update checker and loads upstream's admin code, the drop-in boots the
+        database layer, the bootstraps define constants.
+    -->
+    <rule ref="PSR1.Files.SideEffects">
+        <exclude-pattern>wordpress-sqlite-anywhere.php</exclude-pattern>
+        <exclude-pattern>db.copy</exclude-pattern>
+        <exclude-pattern>phpstan-bootstrap.php</exclude-pattern>
+        <exclude-pattern>*/tests/bootstrap.php</exclude-pattern>
+    </rule>
+
+    <!-- WordPress hook callbacks and long constant tables warrant some width. -->
+    <rule ref="Generic.Files.LineLength">
+        <properties>
+            <property name="lineLimit" value="140"/>
+            <property name="absoluteLineLimit" value="0"/>
+        </properties>
+    </rule>
+</ruleset>

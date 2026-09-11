@@ -1,0 +1,13 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "include-v-in-tag": true,
+  "include-component-in-tag": false,
+  "packages": {
+    ".": {
+      "release-type": "php",
+      "package-name": "wordpress-sqlite-anywhere",
+      "initial-version": "1.0.0",
+      "extra-files": ["wordpress-sqlite-anywhere.php"]
+    }
+  }
+}

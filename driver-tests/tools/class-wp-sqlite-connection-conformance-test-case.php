@@ -100,7 +100,7 @@ abstract class WP_SQLite_Connection_Conformance_Test_Case extends TestCase {
 
 	public function test_server_version(): void {
 		$connection = $this->create_connection();
-		$this->assertRegExp(
+		$this->assertMatchesRegularExpression(
 			'/^\d+\.\d+(\.\d+)?/',
 			$connection->get_server_version()
 		);

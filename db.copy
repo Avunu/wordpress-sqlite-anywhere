@@ -1,0 +1,63 @@
+<?php
+
+/**
+ * Plugin Name: WordPress SQLite Anywhere (Drop-in)
+ * Version: 1.0.0
+ *
+ * The "wp-content/db.php" drop-in. It locates the plugin and hands over to
+ * \SqliteAnywhere\DropIn, which picks the engine -- local SQLite, Turso, or
+ * Cloudflare D1 -- from DB_ENGINE (or, failing that, from which backend is
+ * configured) and boots the matching database layer.
+ *
+ * This file is copied from the plugin; edit the plugin, not the copy.
+ */
+
+declare(strict_types=1);
+
+// Upstream's admin UI keys the "drop-in installed / stale" notices on this.
+define('SQLITE_DB_DROPIN_VERSION', '1.0.0');
+
+// Tweak to allow copy-pasting the file without having to run string-replacements.
+$sqliteAnywhereFolder = '{SQLITE_IMPLEMENTATION_FOLDER_PATH}';
+if (!file_exists($sqliteAnywhereFolder)) {
+    $sqliteAnywhereFolder = realpath(__DIR__ . '/plugins/wordpress-sqlite-anywhere');
+}
+
+// Bail early if the plugin was not located.
+if ($sqliteAnywhereFolder === false || !file_exists($sqliteAnywhereFolder . '/src/DropIn.php')) {
+    return;
+}
+
+// No autoloader this early in the WordPress boot: require the few files the
+// drop-in needs by path.
+require_once $sqliteAnywhereFolder . '/src/Config.php';
+require_once $sqliteAnywhereFolder . '/src/Engine.php';
+require_once $sqliteAnywhereFolder . '/src/DropIn.php';
+
+if (\SqliteAnywhere\DropIn::boot($sqliteAnywhereFolder) === null) {
+    return;
+}
+
+// Activate the plugin if it is not already activated.
+add_action(
+    'admin_footer',
+    static function (): void {
+        if (defined('SQLITE_MAIN_FILE')) {
+            return;
+        }
+        if (!function_exists('activate_plugin')) {
+            require_once ABSPATH . 'wp-admin/includes/plugin.php';
+        }
+
+        $pluginPath = WP_PLUGIN_DIR . '/' . '{SQLITE_PLUGIN}';
+
+        if (file_exists($pluginPath) && is_plugin_inactive('{SQLITE_PLUGIN}')) {
+            // If `activate_plugin()` returns a value other than null (like WP_Error),
+            // the plugin could not be found. Try with a hardcoded string,
+            // because that probably means the file was directly copy-pasted.
+            if (activate_plugin('{SQLITE_PLUGIN}', '', false, true) !== null) {
+                activate_plugin('wordpress-sqlite-anywhere/wordpress-sqlite-anywhere.php', '', false, true);
+            }
+        }
+    }
+);

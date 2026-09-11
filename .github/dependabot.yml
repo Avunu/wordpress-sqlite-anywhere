@@ -1,0 +1,85 @@
+version: 2
+
+# Keeps every ecosystem in this repo up to date. Updates land on `main` automatically
+# (see .github/workflows/dependabot-auto-merge.yml); release-please remains the gate for
+# actually cutting a release. Dep bumps use the `chore` type so they never force a
+# release on their own — they ride along with the next real release.
+#
+# The upstream driver submodule is NOT managed here: Dependabot's gitsubmodule
+# ecosystem follows branch HEAD, and we pin release tags (upstream-bump.yml).
+updates:
+  # GitHub Actions used by the workflows.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: daily
+    commit-message:
+      prefix: chore
+    groups:
+      github-actions:
+        patterns: ["*"]
+
+  # PHP plugin dependencies (composer.json / composer.lock).
+  - package-ecosystem: composer
+    directory: /
+    schedule:
+      interval: daily
+    commit-message:
+      prefix: chore
+    groups:
+      composer:
+        patterns: ["*"]
+
+  # The bundled driver's test tooling (PHPUnit 9 + WPCS).
+  - package-ecosystem: composer
+    directory: /driver-tests/tools-project
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+    groups:
+      driver-tools:
+        patterns: ["*"]
+
+  # The Rust crates.
+  - package-ecosystem: cargo
+    directory: /packages/turso-snapshot-publisher
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+    groups:
+      publisher:
+        patterns: ["*"]
+
+  - package-ecosystem: cargo
+    directory: /packages/php-ext-wp-d1-client
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+    groups:
+      d1-client:
+        patterns: ["*"]
+
+  # The D1 proxy worker.
+  - package-ecosystem: npm
+    directory: /packages/d1-proxy-worker
+    schedule:
+      interval: daily
+    commit-message:
+      prefix: chore
+    groups:
+      npm:
+        patterns: ["*"]
+
+  # flake.lock inputs.
+  - package-ecosystem: nix
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+    groups:
+      nix:
+        patterns: ["*"]

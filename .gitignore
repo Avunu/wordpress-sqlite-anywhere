@@ -1,0 +1,10 @@
+vendor
+node_modules
+/build
+.devenv
+.direnv
+.phpunit.cache
+result
+result-*
+wordpress-sqlite-anywhere.zip
+.pre-commit-config.yaml

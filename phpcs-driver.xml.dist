@@ -1,0 +1,54 @@
+<?xml version="1.0"?>
+<!--
+    WordPress Coding Standards for the code that overlays upstream's driver.
+    This mirrors upstream's own phpcs.xml.dist so the overlay reads like the
+    tree it lands in; the exclusions are upstream's, re-rooted.
+
+    WPCS requires PHP_CodeSniffer 3.x, so this ruleset runs through the
+    composer project in driver-tests/tools-project/ (installed_paths below):
+
+      driver-tests/tools-project/vendor/bin/phpcs [dash-dash]standard=phpcs-driver.xml.dist
+      nix build .#checks.x86_64-linux.phpcs-driver -L
+-->
+<ruleset name="wordpress-sqlite-anywhere-driver">
+	<description>WordPress coding standard for the driver overlay.</description>
+
+	<config name="installed_paths" value="driver-tests/tools-project/vendor/wp-coding-standards/wpcs,driver-tests/tools-project/vendor/phpcsstandards/phpcsutils,driver-tests/tools-project/vendor/phpcsstandards/phpcsextra"/>
+
+	<file>driver</file>
+	<file>driver-tests</file>
+	<file>plugin</file>
+
+	<exclude-pattern>*/vendor/*</exclude-pattern>
+	<exclude-pattern>*/tools-project/*</exclude-pattern>
+
+	<arg name="extensions" value="php"/>
+	<arg name="basepath" value="."/>
+	<arg name="parallel" value="20"/>
+	<arg value="ps"/>
+	<ini name="memory_limit" value="512M"/>
+
+	<rule ref="WordPress-Core"/>
+
+	<rule ref="WordPress.DB.RestrictedClasses.mysql__PDO">
+		<exclude-pattern>/driver/sqlite/*\.php</exclude-pattern>
+		<exclude-pattern>/driver-tests/*</exclude-pattern>
+	</rule>
+
+	<rule ref="WordPress.DB.RestrictedClasses">
+		<exclude-pattern>/driver-tests/*</exclude-pattern>
+	</rule>
+
+	<!-- Assignments in while conditions are a valid method of looping over iterables. -->
+	<rule ref="Generic.CodeAnalysis.AssignmentInCondition.FoundInWhileCondition">
+		<exclude-pattern>*</exclude-pattern>
+	</rule>
+
+	<!-- Exclude the unit tests from the file name rules. -->
+	<rule ref="WordPress.Files.FileName">
+		<exclude-pattern>/driver-tests/*</exclude-pattern>
+	</rule>
+	<rule ref="WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase">
+		<exclude-pattern>/driver-tests/*</exclude-pattern>
+	</rule>
+</ruleset>

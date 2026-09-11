@@ -1,0 +1,99 @@
+name: Upstream bump
+
+# Tracks WordPress/sqlite-database-integration release by release. Weekly (and on
+# demand), find the newest release tag; if it is newer than the pin, move the
+# submodule to it and try the patch series. When it applies, open a PR that
+# check.yml gates like any other. When a patch no longer applies, open a draft PR
+# carrying the moved gitlink and an issue quoting the rejected hunks, for a human
+# to resolve with bin/patches-checkout.sh / bin/patches-export.sh.
+#
+# Dependabot's gitsubmodule ecosystem is deliberately not used: it tracks the
+# default branch's HEAD, not tags.
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+
+      - name: Find the newest upstream release
+        id: latest
+        run: |
+          git -C upstream fetch --tags origin
+          current="$(git -C upstream describe --tags --exact-match)"
+          # Newest vX.Y.Z tag by version sort; pre-releases (-rc, -beta) excluded.
+          latest="$(git -C upstream tag --list 'v[0-9]*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)"
+          echo "current=$current" >> "$GITHUB_OUTPUT"
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+          if [ "$current" = "$latest" ]; then
+            echo "pinned at $current, which is the newest release"
+            echo "bump=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "bump=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Move the pin
+        if: ${{ steps.latest.outputs.bump == 'true' }}
+        run: |
+          git -C upstream checkout -q "${{ steps.latest.outputs.latest }}"
+          git -C upstream log --oneline "${{ steps.latest.outputs.current }}..${{ steps.latest.outputs.latest }}" > /tmp/upstream-log.txt
+          git add upstream
+
+      - name: Try the patch series
+        if: ${{ steps.latest.outputs.bump == 'true' }}
+        id: assemble
+        continue-on-error: true
+        run: |
+          bash bin/assemble.sh 2>&1 | tee /tmp/assemble.log
+
+      - name: Open the bump PR
+        if: ${{ steps.latest.outputs.bump == 'true' }}
+        uses: peter-evans/create-pull-request@v8
+        with:
+          branch: upstream/${{ steps.latest.outputs.latest }}
+          commit-message: |
+            feat(driver): bump bundled driver to ${{ steps.latest.outputs.latest }}
+
+            Upstream ${{ steps.latest.outputs.current }} → ${{ steps.latest.outputs.latest }}.
+          title: "feat(driver): bump bundled driver to ${{ steps.latest.outputs.latest }}"
+          body-path: /tmp/upstream-log.txt
+          draft: ${{ steps.assemble.outcome == 'failure' }}
+          labels: upstream
+
+      - name: File the conflict
+        if: ${{ steps.latest.outputs.bump == 'true' && steps.assemble.outcome == 'failure' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LATEST: ${{ steps.latest.outputs.latest }}
+        run: |
+          {
+            echo "The patch series no longer applies against upstream \`$LATEST\`. The draft PR on branch \`upstream/$LATEST\` carries the moved submodule pin; resolve with:"
+            echo
+            echo '```sh'
+            echo 'git checkout upstream/'"$LATEST"' && git submodule update'
+            echo 'bin/patches-checkout.sh   # git am --3way; fix conflicts, commit'
+            echo 'bin/patches-export.sh'
+            echo '```'
+            echo
+            echo '<details><summary>assemble output</summary>'
+            echo
+            echo '```'
+            cat /tmp/assemble.log
+            echo '```'
+            echo '</details>'
+          } > /tmp/issue.md
+          gh issue create --repo "$GITHUB_REPOSITORY" \
+            --title "Upstream $LATEST: patch series needs rebasing" \
+            --label upstream \
+            --body-file /tmp/issue.md

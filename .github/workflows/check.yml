@@ -1,0 +1,83 @@
+name: Check
+
+# Quality gates on every push and pull request (so Dependabot PRs are gated before
+# auto-merge). Everything PHP, Nix and Rust runs through the flake's `checks`, one
+# matrix job per check, so a failure names the gate that tripped. The D1 proxy
+# worker's tests run on a plain runner: its vitest pool needs workerd, which the
+# read-only Nix sandbox cannot host.
+#
+# The upstream submodule must be checked out for every job: bin/assemble.sh and
+# `self.submodules = true` both read it.
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  nix:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        check:
+          - assembled
+          - plugin-header
+          - phpstan
+          - phpcs
+          - phpcs-driver
+          - phpunit
+          - driver-pdo
+          - driver-d1
+          - driver-turso
+          - publisher
+          - d1-client
+          - pre-commit
+    name: ${{ matrix.check }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+
+      # `determinate: false` — no Determinate-only nixConfig here, so the
+      # default install just has determinate-nixd fail to log into FlakeHub
+      # for a repo that isn't registered there.
+      - uses: DeterminateSystems/nix-installer-action@v22
+        with:
+          determinate: false
+      # `use-flakehub: false` — same reason, for the cache action's own probe.
+      - uses: DeterminateSystems/magic-nix-cache-action@v14
+        with:
+          use-flakehub: false
+
+      - run: nix build .#checks.x86_64-linux.${{ matrix.check }} -L
+
+  upstream-pin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+          # Tags of the submodule are what the pin check resolves against.
+          fetch-depth: 0
+
+      - run: git -C upstream fetch --tags --depth=1 origin
+      - run: bin/verify-upstream-pin.sh
+
+  worker:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/d1-proxy-worker
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: packages/d1-proxy-worker/package-lock.json
+
+      - run: npm ci
+
+      - run: npm test

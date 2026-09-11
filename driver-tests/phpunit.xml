@@ -1,0 +1,39 @@
+<phpunit
+		xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+		xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/9.6/phpunit.xsd"
+		bootstrap="tests/bootstrap-anywhere.php"
+		backupGlobals="false"
+		colors="true"
+		beStrictAboutTestsThatDoNotTestAnything="true"
+		beStrictAboutOutputDuringTests="true"
+		convertErrorsToExceptions="true"
+		convertWarningsToExceptions="true"
+		convertNoticesToExceptions="true"
+		convertDeprecationsToExceptions="true"
+		>
+	<php>
+		<ini name="memory_limit" value="512M"/>
+	</php>
+	<testsuites>
+		<!--
+			Upstream's suites plus ours, against the local PDO backend, or
+			against a remote backend's fake transport when
+			WP_SQLITE_TEST_BACKEND is "d1" or "turso".
+		-->
+		<testsuite name="driver">
+			<directory suffix="_Tests.php">tests/</directory>
+			<exclude>tests/tools</exclude>
+		</testsuite>
+		<!--
+			The four suites the remote backends are conformance-tested with.
+			The other suites are pure translation tests that do not touch a
+			connection, or are backend-specific already.
+		-->
+		<testsuite name="remote">
+			<file>tests/WP_MySQL_On_SQLite_Tests.php</file>
+			<file>tests/WP_MySQL_On_SQLite_Query_Tests.php</file>
+			<file>tests/WP_MySQL_On_SQLite_Metadata_Tests.php</file>
+			<file>tests/WP_MySQL_On_SQLite_PDO_API_Tests.php</file>
+		</testsuite>
+	</testsuites>
+</phpunit>
