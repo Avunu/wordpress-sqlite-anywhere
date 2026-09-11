@@ -12,78 +12,7 @@
  * Some PDOStatement methods use $class and $var as variable names, enable them:
  *   phpcs:disable Universal.NamingConventions.NoReservedKeywordParameterNames.classFound
  *   phpcs:disable Universal.NamingConventions.NoReservedKeywordParameterNames.varFound
- *
- * We use traits to support different PHP versions with incompatible PDO statement
- * method signatures. For that, enable multiple object structures in one file:
- *   phpcs:disable Generic.Files.OneObjectStructurePerFile.MultipleFound
  */
-
-/**
- * Some PDOStatement methods are not compatible across different PHP versions.
- * To address "Declaration of ... should be compatible with ..." PHP warnings,
- * we conditionally define traits with different APIs based on the PHP version.
- */
-if ( PHP_VERSION_ID < 80000 ) {
-	trait WP_PDO_Array_Statement_PHP_Compat {
-		/**
-		 * Set the default fetch mode for this statement.
-		 *
-		 * @param  int   $mode   The fetch mode to set as the default.
-		 * @param  mixed $params Additional parameters for the default fetch mode.
-		 * @return bool          True on success, false on failure.
-		 */
-		public function setFetchMode( $mode, $params = null ): bool {
-			// Do not pass additional arguments when they are NULL to prevent
-			// "fetch mode doesn't allow any extra arguments" error.
-			if ( null === $params ) {
-				return $this->setDefaultFetchMode( $mode );
-			}
-			return $this->setDefaultFetchMode( $mode, $params );
-		}
-
-		/**
-		 * Fetch all remaining rows from the result set.
-		 *
-		 * @param  int   $mode             The fetch mode to use.
-		 * @param  mixed $class_name       With PDO::FETCH_CLASS, the name of the class to instantiate.
-		 * @param  mixed $constructor_args With PDO::FETCH_CLASS, the parameters to pass to the class constructor.
-		 * @return array                   The result set as an array of rows.
-		 */
-		public function fetchAll( $mode = null, $class_name = null, $constructor_args = null ): array {
-			// Do not pass additional arguments when they are NULL to prevent
-			// "Extraneous additional parameters" error.
-			if ( null === $class_name && null === $constructor_args ) {
-				return $this->fetchAllRows( $mode );
-			}
-			return $this->fetchAllRows( $mode, $class_name, $constructor_args );
-		}
-	}
-} else {
-	trait WP_PDO_Array_Statement_PHP_Compat {
-		/**
-		 * Set the default fetch mode for this statement.
-		 *
-		 * @param  int   $mode   The fetch mode to set as the default.
-		 * @param  mixed $args   Additional parameters for the default fetch mode.
-		 * @return bool          True on success, false on failure.
-		 */
-		#[ReturnTypeWillChange]
-		public function setFetchMode( $mode, ...$args ): bool {
-			return $this->setDefaultFetchMode( $mode, ...$args );
-		}
-
-		/**
-		 * Fetch all remaining rows from the result set.
-		 *
-		 * @param  int   $mode The fetch mode to use.
-		 * @param  mixed $args Additional parameters for the fetch mode.
-		 * @return array       The result set as an array of rows.
-		 */
-		public function fetchAll( $mode = PDO::FETCH_DEFAULT, ...$args ): array {
-			return $this->fetchAllRows( $mode, ...$args );
-		}
-	}
-}
 
 /**
  * PDOStatement implementation that operates on in-memory data.
@@ -112,8 +41,6 @@ if ( PHP_VERSION_ID < 80000 ) {
  *   - PDO::FETCH_FUNC:     custom function, only works with fetchAll(), can't be default [1 extra arg]
  */
 class WP_PDO_Array_Statement extends PDOStatement {
-	use WP_PDO_Array_Statement_PHP_Compat;
-
 	/**
 	 * The column names, in order. Duplicate names are preserved.
 	 *
@@ -430,7 +357,7 @@ class WP_PDO_Array_Statement extends PDOStatement {
 		 * from PHP 8.0 -- the floor for this fork. Before that it iterated through
 		 * an internal handler no subclass could override.
 		 */
-		return new ArrayIterator( $this->fetchAllRows() );
+		return new ArrayIterator( $this->fetchAll() );
 	}
 
 	/**
@@ -546,15 +473,12 @@ class WP_PDO_Array_Statement extends PDOStatement {
 	/**
 	 * Fetch all remaining rows from the result set.
 	 *
-	 * This is used internally by the "WP_PDO_Array_Statement_PHP_Compat" trait,
-	 * that is defined conditionally based on the current PHP version.
-	 *
 	 * @param  int   $mode The fetch mode to use.
 	 * @param  mixed $args Additional parameters for the fetch mode.
 	 * @return array       The result set as an array of rows.
 	 */
-	private function fetchAllRows( $mode = null, ...$args ): array {
-		if ( null === $mode || 0 === $mode ) {
+	public function fetchAll( $mode = PDO::FETCH_DEFAULT, ...$args ): array {
+		if ( null === $mode || PDO::FETCH_DEFAULT === $mode ) {
 			$mode = $this->default_fetch_mode;
 			$args = $this->default_fetch_args;
 		}
@@ -583,14 +507,12 @@ class WP_PDO_Array_Statement extends PDOStatement {
 	/**
 	 * Set the default fetch mode for this statement.
 	 *
-	 * This is used internally by the "WP_PDO_Array_Statement_PHP_Compat" trait,
-	 * that is defined conditionally based on the current PHP version.
-	 *
 	 * @param  int   $mode   The fetch mode to set as the default.
 	 * @param  mixed $args   Additional parameters for the default fetch mode.
 	 * @return bool          True on success, false on failure.
 	 */
-	private function setDefaultFetchMode( $mode, ...$args ): bool {
+	#[ReturnTypeWillChange]
+	public function setFetchMode( $mode, ...$args ): bool {
 		if ( PDO::FETCH_LAZY === $mode || PDO::FETCH_BOUND === $mode || PDO::FETCH_FUNC === $mode ) {
 			throw new RuntimeException( 'Not implemented' );
 		}

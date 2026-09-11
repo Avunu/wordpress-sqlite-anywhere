@@ -1,0 +1,39 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Kevin Shenk <kevin@avu.nu>
+Date: Fri, 11 Sep 2026 17:38:25 -0400
+Subject: [PATCH 07/14] class-wp-sqlite-information-schema-reconstructor.php:
+ carry the fork's changes (phase 1, mechanical)
+
+---
+ .../class-wp-sqlite-information-schema-reconstructor.php     | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/packages/mysql-on-sqlite/src/sqlite/class-wp-sqlite-information-schema-reconstructor.php b/packages/mysql-on-sqlite/src/sqlite/class-wp-sqlite-information-schema-reconstructor.php
+index e1d905a..78b6127 100644
+--- a/packages/mysql-on-sqlite/src/sqlite/class-wp-sqlite-information-schema-reconstructor.php
++++ b/packages/mysql-on-sqlite/src/sqlite/class-wp-sqlite-information-schema-reconstructor.php
+@@ -28,7 +28,7 @@ class WP_SQLite_Information_Schema_Reconstructor {
+ 	/**
+ 	 * An instance of the SQLite connection.
+ 	 *
+-	 * @var WP_SQLite_Connection
++	 * @var WP_SQLite_Connection_Interface
+ 	 */
+ 	private $connection;
+ 
+@@ -135,12 +135,15 @@ class WP_SQLite_Information_Schema_Reconstructor {
+ 				AND name != ?
+ 				AND name NOT LIKE ? ESCAPE '\'
+ 				AND name NOT LIKE ? ESCAPE '\'
++				AND name NOT LIKE ? ESCAPE '\'
+ 				ORDER BY name
+ 			",
+ 			array(
+ 				'_mysql_data_types_cache',
+ 				'sqlite\_%',
+ 				str_replace( '_', '\_', WP_MySQL_On_SQLite::RESERVED_PREFIX ) . '%',
++				// Cloudflare D1 internal tables (e.g. "_cf_METADATA", "_cf_KV").
++				'\_cf\_%',
+ 			)
+ 		)->fetchAll( PDO::FETCH_COLUMN );
+ 	}
