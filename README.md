@@ -143,7 +143,9 @@ WP_SQLITE_TEST_BACKEND=d1    ../../../driver-tests/tools-project/vendor/bin/phpu
 WP_SQLITE_TEST_BACKEND=turso ../../../driver-tests/tools-project/vendor/bin/phpunit --testsuite remote
 ```
 
-Every check also exists as a flake check, which is what CI runs: `nix build .#checks.x86_64-linux.<name> -L` for `assembled`, `plugin-header`, `phpstan`, `phpcs`, `phpcs-driver`, `phpunit`, `driver-pdo`, `driver-d1`, `driver-turso`, `publisher`, `d1-client`, `worker` and `pre-commit`. `nix flake check` runs the sandbox-safe subset; the pre-push git hooks run PHPStan, PHPCS and the Nix linters locally.
+Every check also exists as a flake check, which is what CI runs: `nix build .#checks.x86_64-linux.<name> -L` for `assembled`, `plugin-header`, `phpstan`, `phpcs`, `phpcs-driver`, `phpunit`, `driver-pdo`, `driver-d1`, `driver-turso`, `publisher`, `d1-client` and `pre-commit`; the D1 proxy worker's vitest suite runs on a plain Node runner (its pool needs workerd). `nix flake check` runs the sandbox-safe subset; the pre-push git hooks run PHPStan, PHPCS and the Nix linters locally — push from `nix develop` so they find their tools.
+
+`main` requires every one of those jobs to pass; Dependabot PRs auto-merge once they do. Majors of the driver suites' PHPUnit and of the worker's vitest stack are held back in `.github/dependabot.yml` (upstream's suites use PHPUnit 8/9 APIs; the worker config predates the Vitest 4 plugin form).
 
 * * *
 
