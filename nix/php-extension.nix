@@ -14,10 +14,19 @@
   # The Rust toolchain can come from a newer package set than the PHP build.
   rustPkgs ? pkgs,
 }:
+let
+  # Only the crate directory: a source hash that depends on the whole flake
+  # would rebuild the crate on every unrelated commit.
+  crate = builtins.path {
+    path = src;
+    name = "${pname}-src";
+  };
+in
 rustPkgs.rustPlatform.buildRustPackage {
-  inherit pname src;
+  inherit pname;
   version = "0.1.0";
-  cargoLock.lockFile = "${src}/Cargo.lock";
+  src = crate;
+  cargoLock.lockFile = "${crate}/Cargo.lock";
 
   # ext-php-rs generates bindings against the PHP headers at build time.
   nativeBuildInputs = [ rustPkgs.rustPlatform.bindgenHook ];

@@ -13,13 +13,21 @@
   # The Rust toolchain can come from a newer package set than the rest.
   rustPkgs ? pkgs,
 }:
+let
+  # Only the crate directory: a source hash that depends on the whole flake
+  # would rebuild the crate on every unrelated commit.
+  crate = builtins.path {
+    path = "${src}/packages/turso-snapshot-publisher";
+    name = "turso-snapshot-publisher-src";
+  };
+in
 rustPkgs.rustPlatform.buildRustPackage {
   pname = "turso-snapshot-publisher";
   version = "0.1.0";
 
-  src = "${src}/packages/turso-snapshot-publisher";
+  src = crate;
 
-  cargoLock.lockFile = "${src}/packages/turso-snapshot-publisher/Cargo.lock";
+  cargoLock.lockFile = "${crate}/Cargo.lock";
 
   # turso_core pulls in ring through hyper-rustls.
   nativeBuildInputs = with rustPkgs; [ pkg-config ];
