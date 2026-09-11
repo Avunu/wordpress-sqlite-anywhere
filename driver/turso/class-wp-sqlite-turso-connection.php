@@ -65,7 +65,7 @@ class WP_SQLite_Turso_Connection implements WP_SQLite_Connection_Interface {
 	/**
 	 * A query logger callback.
 	 *
-	 * @var callable(string, array): void
+	 * @var SqliteQueryLogger|null
 	 */
 	private $query_logger;
 
@@ -132,7 +132,7 @@ class WP_SQLite_Turso_Connection implements WP_SQLite_Connection_Interface {
 	 * trip, so information schema reads are memoized and invalidated by any
 	 * statement that could change the schema.
 	 *
-	 * @var array<string, array>
+	 * @var array<string, RemoteResult>
 	 */
 	private $schema_cache = array();
 
@@ -147,7 +147,7 @@ class WP_SQLite_Turso_Connection implements WP_SQLite_Connection_Interface {
 	 * Constructor.
 	 *
 	 * @param WP_SQLite_Turso_Transport_Interface $transport The Turso transport.
-	 * @param array                               $options {
+	 * @param array<string, mixed>                $options {
 	 *     Optional. An array of options.
 	 *
 	 *     @type bool $schema_cache Whether to cache schema information reads.
@@ -171,8 +171,8 @@ class WP_SQLite_Turso_Connection implements WP_SQLite_Connection_Interface {
 	/**
 	 * Execute a query in the Turso database.
 	 *
-	 * @param  string $sql    The query to execute.
-	 * @param  array  $params The query parameters.
+	 * @param  string       $sql    The query to execute.
+	 * @param  SqliteParams $params The query parameters.
 	 * @throws WP_SQLite_Turso_Exception When the query execution fails.
 	 * @return PDOStatement  The PDO statement object.
 	 */
@@ -216,11 +216,11 @@ class WP_SQLite_Turso_Connection implements WP_SQLite_Connection_Interface {
 	 * When any query fails, none of the queries take effect. The transport
 	 * spells the transaction out as batch steps; see WP_SQLite_Turso_Protocol.
 	 *
-	 * @param  array<int, array{0: string, 1?: array}> $statements
+	 * @param  SqliteBatch $statements
 	 *                        The queries to execute, each being an array of
 	 *                        a query string and optional query parameters.
 	 * @throws WP_SQLite_Turso_Exception When the execution of any query fails.
-	 * @return PDOStatement[] The PDO statement objects, one for each query.
+	 * @return list<PDOStatement> The PDO statement objects, one for each query.
 	 */
 	public function execute_batch( array $statements ): array {
 		$prepared = array();
@@ -461,7 +461,7 @@ class WP_SQLite_Turso_Connection implements WP_SQLite_Connection_Interface {
 	/**
 	 * Set a logger for the queries.
 	 *
-	 * @param callable(string, array): void $logger A query logger callback.
+	 * @param SqliteQueryLogger $logger A query logger callback.
 	 */
 	public function set_query_logger( callable $logger ): void {
 		$this->query_logger = $logger;
@@ -579,9 +579,9 @@ class WP_SQLite_Turso_Connection implements WP_SQLite_Connection_Interface {
 	/**
 	 * Inline query parameters when the statement has too many of them.
 	 *
-	 * @param  string $sql    The SQL statement with "?" placeholders.
-	 * @param  array  $params The positional query parameters.
-	 * @return array{0: string, 1: array} The statement and parameters to send.
+	 * @param  string       $sql    The SQL statement with "?" placeholders.
+	 * @param  SqliteParams $params The positional query parameters.
+	 * @return array{0: string, 1: SqliteParams} The statement and parameters to send.
 	 */
 	private function maybe_inline_params( string $sql, array $params ): array {
 		if ( count( $params ) <= self::PARAMS_INLINE_THRESHOLD ) {
@@ -606,7 +606,11 @@ class WP_SQLite_Turso_Connection implements WP_SQLite_Connection_Interface {
 						break;
 					}
 					// A doubled quote character is an escape sequence.
-				} while ( isset( $sql[ $end + 1 ] ) && $sql[ $end + 1 ] === $char && ++$end );
+					if ( ! isset( $sql[ $end + 1 ] ) || $sql[ $end + 1 ] !== $char ) {
+						break;
+					}
+					$end += 1;
+				} while ( true );
 
 				$inlined .= substr( $sql, $i, $end - $i + 1 );
 				$i        = $end;
@@ -628,7 +632,7 @@ class WP_SQLite_Turso_Connection implements WP_SQLite_Connection_Interface {
 	/**
 	 * Store statement metadata for connection-level APIs.
 	 *
-	 * @param array $meta The statement metadata.
+	 * @param RemoteMeta $meta The statement metadata.
 	 */
 	private function remember_meta( array $meta ): void {
 		if ( ( $meta['last_row_id'] ?? 0 ) > 0 ) {
@@ -639,7 +643,7 @@ class WP_SQLite_Turso_Connection implements WP_SQLite_Connection_Interface {
 	/**
 	 * Create an in-memory statement from a transport result.
 	 *
-	 * @param  array $result The transport result (columns, rows, meta).
+	 * @param  RemoteResult $result The transport result (columns, rows, meta).
 	 * @return WP_PDO_Array_Statement The statement.
 	 */
 	private function create_statement( array $result ): WP_PDO_Array_Statement {

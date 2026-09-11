@@ -10,8 +10,13 @@ parameters:
         - wordpress-sqlite-anywhere.php
         - db.copy
         - src/
+        - driver/
         - plugin/
         - tests/
+        # WP_SQLite_PDO_Connection_Methods is a trait, analysed only in the
+        # context of a class using it: upstream's WP_SQLite_Connection, once
+        # patched. That one upstream file is analysed for the trait's sake.
+        - build/packages/mysql-on-sqlite/src/sqlite/class-wp-sqlite-connection.php
     # The upstream driver's classes (WP_SQLite_Driver, WP_MySQL_On_SQLite, the
     # connection interface's siblings, ...) are what driver/ implements against.
     # They are scanned, never analysed: upstream's code is upstream's problem.
@@ -23,7 +28,25 @@ parameters:
         - build/packages/plugin-sqlite-database-integration/integrations
     bootstrapFiles:
         - phpstan-bootstrap.php
+    # Shapes shared by the driver overlays. The docblocks in driver/ name these
+    # so a change to a shape is made once.
+    typeAliases:
+        # Query parameters: positional or named, as PDO takes them.
+        SqliteParams: 'array<int|string, scalar|null>'
+        # A batch: SQL strings with optional parameters, in order.
+        SqliteBatch: 'list<array{0: string, 1?: array<int|string, scalar|null>}>'
+        # A cell of a result set, before any stringification.
+        SqliteValue: 'scalar|null'
+        # What a remote transport returns for one statement.
+        RemoteResult: 'array{columns: list<string>, rows: list<list<scalar|null>>, meta: array{changes: int, last_row_id: int}}'
+        RemoteMeta: 'array{changes: int, last_row_id: int}'
+        # A query logger callback.
+        SqliteQueryLogger: 'callable(string, array<int|string, scalar|null>): void'
     # Environment constants that may or may not be defined at runtime.
+    # The native transport extends a class the Rust extension declares at
+    # runtime; the stub gives PHPStan its shape.
+    scanFiles:
+        - phpstan/wp-d1-client-stub.php
     dynamicConstantNames:
         - WP_CLI
         - DB_ENGINE
@@ -35,6 +58,15 @@ parameters:
     # defensive null handling without false positives.
     treatPhpDocTypesAsCertain: false
     ignoreErrors:
+        # Upstream's WP_SQLite_Connection is analysed only so that the trait it
+        # uses is analysed in context; its own docblocks are upstream's to keep.
+        # Errors inside the trait are reported against the trait's path and are
+        # not covered by this.
+        -
+            path: build/packages/mysql-on-sqlite/src/sqlite/class-wp-sqlite-connection.php
+            identifiers:
+                - missingType.iterableValue
+                - return.type
         # PucFactory::buildUpdateChecker() is typed as a broad union; narrowing it
         # would require referencing the version-suffixed (v5pX) class names, which
         # break on every plugin-update-checker minor release.

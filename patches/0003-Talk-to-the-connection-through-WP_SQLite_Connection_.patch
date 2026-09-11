@@ -1,0 +1,491 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Kevin Shenk <kevin@avu.nu>
+Date: Fri, 11 Sep 2026 18:18:18 -0400
+Subject: [PATCH 03/11] Talk to the connection through
+ WP_SQLite_Connection_Interface
+
+The driver, the configurator, the information schema builder and
+reconstructor, and the user-defined functions no longer reach for the PDO
+handle: transactions, savepoints, attributes, the server version and
+function registration go through the interface, and a "sqlite_connection"
+driver option (or the WP_SQLite_Driver constructor) accepts any
+implementation. The PHP < 8.4 inTransaction() polyfill goes: the connection
+reports its own state. get_sqlite_pdo() still works for the local
+connection and explains itself for the others.
+
+Candidate for upstreaming as is.
+---
+ .../src/sqlite/class-wp-mysql-on-sqlite.php   | 131 ++++++++----------
+ .../sqlite/class-wp-sqlite-configurator.php   |   7 +-
+ .../src/sqlite/class-wp-sqlite-driver.php     |  27 ++--
+ ...s-wp-sqlite-information-schema-builder.php |  10 +-
+ ...qlite-information-schema-reconstructor.php |   2 +-
+ ...s-wp-sqlite-pdo-user-defined-functions.php |  15 +-
+ 6 files changed, 88 insertions(+), 104 deletions(-)
+
+diff --git a/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php b/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php
+index 485a260..357bdf7 100644
+--- a/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php
++++ b/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php
+@@ -549,7 +549,7 @@ class WP_MySQL_On_SQLite extends PDO {
+ 	/**
+ 	 * An instance of the SQLite connection.
+ 	 *
+-	 * @var WP_SQLite_Connection
++	 * @var WP_SQLite_Connection_Interface
+ 	 */
+ 	private $connection;
+ 
+@@ -698,19 +698,6 @@ class WP_MySQL_On_SQLite extends PDO {
+ 	 */
+ 	private $wrapper_transaction_type = null;
+ 
+-	/**
+-	 * Whether an SQLite transaction is active in the current session.
+-	 *
+-	 * This is a polyfill of the "PDO::inTransaction()" method for PHP < 8.4,
+-	 * where the "PDO::inTransaction()" method is not reliable with SQLite.
+-	 *
+-	 * @see https://bugs.php.net/bug.php?id=81227
+-	 * @see https://github.com/php/php-src/pull/14268
+-	 *
+-	 * @var bool
+-	 */
+-	private $in_transaction = false;
+-
+ 	/**
+ 	 * Names of active user savepoints, outermost first.
+ 	 *
+@@ -791,6 +778,9 @@ class WP_MySQL_On_SQLite extends PDO {
+ 	 *     Driver-specific PDO options are not supported.
+ 	 *
+ 	 *     @type int             $mysql_version       Optional. MySQL version to emulate. Default 80038.
++	 *     @type object|null     $sqlite_connection   Optional. An existing WP_SQLite_Connection_Interface
++	 *                                                instance to run queries through. Takes precedence
++	 *                                                over "sqlite_pdo" and the DSN path.
+ 	 *     @type PDO|null        $sqlite_pdo          Optional. Existing PDO SQLite connection.
+ 	 *     @type string|null     $sqlite_journal_mode Optional. SQLite journal mode. Default 'WAL'.
+ 	 *     @type string|int|null $sqlite_synchronous  Optional. SQLite synchronous setting.
+@@ -856,7 +846,6 @@ class WP_MySQL_On_SQLite extends PDO {
+ 			);
+ 		}
+ 
+-		// Create a new SQLite connection.
+ 		$pdo_options = array_filter(
+ 			$options,
+ 			function ( $key ) {
+@@ -872,17 +861,25 @@ class WP_MySQL_On_SQLite extends PDO {
+ 			unset( $pdo_options[ PDO::ATTR_PERSISTENT ] );
+ 		}
+ 
+-		$connection_options = array(
+-			'journal_mode' => $options['sqlite_journal_mode'] ?? null,
+-			'synchronous'  => $options['sqlite_synchronous'] ?? null,
+-			'pdo_options'  => $connection_pdo_options,
+-		);
+-		if ( isset( $options['sqlite_pdo'] ) ) {
+-			$connection_options['pdo'] = $options['sqlite_pdo'];
++		// Use the provided SQLite connection, or create a new one.
++		if (
++			isset( $options['sqlite_connection'] )
++			&& $options['sqlite_connection'] instanceof WP_SQLite_Connection_Interface
++		) {
++			$this->connection = $options['sqlite_connection'];
+ 		} else {
+-			$connection_options['path'] = $path;
++			$connection_options = array(
++				'journal_mode' => $options['sqlite_journal_mode'] ?? null,
++				'synchronous'  => $options['sqlite_synchronous'] ?? null,
++				'pdo_options'  => $connection_pdo_options,
++			);
++			if ( isset( $options['sqlite_pdo'] ) ) {
++				$connection_options['pdo'] = $options['sqlite_pdo'];
++			} else {
++				$connection_options['path'] = $path;
++			}
++			$this->connection = new WP_SQLite_Connection( $connection_options );
+ 		}
+-		$this->connection = new WP_SQLite_Connection( $connection_options );
+ 
+ 		$this->mysql_version = $mysql_version;
+ 		$this->main_db_name  = $db_name;
+@@ -948,7 +945,7 @@ class WP_MySQL_On_SQLite extends PDO {
+ 		$this->connection->query( 'PRAGMA foreign_keys = ON' );
+ 
+ 		// Register SQLite functions.
+-		$this->user_defined_functions = WP_SQLite_PDO_User_Defined_Functions::register_for( $this->connection->get_pdo() );
++		$this->user_defined_functions = WP_SQLite_PDO_User_Defined_Functions::register_for( $this->connection );
+ 
+ 		// Load MySQL grammar.
+ 		if ( null === self::$mysql_grammar ) {
+@@ -1403,16 +1400,7 @@ class WP_MySQL_On_SQLite extends PDO {
+ 	 * @return bool True if a transaction is active, false otherwise.
+ 	 */
+ 	public function inTransaction(): bool {
+-		if ( PHP_VERSION_ID < 80400 ) {
+-			/*
+-			 * On PHP < 8.4, the "PDO::inTransaction()" method is not reliable.
+-			 *
+-			 * @see https://bugs.php.net/bug.php?id=81227
+-			 * @see https://github.com/php/php-src/pull/14268
+-			 */
+-			return $this->in_transaction;
+-		}
+-		return $this->connection->get_pdo()->inTransaction();
++		return $this->connection->in_transaction();
+ 	}
+ 
+ 	/**
+@@ -1435,17 +1423,16 @@ class WP_MySQL_On_SQLite extends PDO {
+ 
+ 		// Track the caller's error mode while keeping internal SQLite operations in exception mode.
+ 		if ( PDO::ATTR_ERRMODE === $attribute ) {
+-			$pdo    = $this->connection->get_pdo();
+-			$result = $pdo->setAttribute( $attribute, $value );
++			$result = $this->connection->set_attribute( $attribute, $value );
+ 			if ( ! $result ) {
+ 				return false;
+ 			}
+-			$this->error_mode = $pdo->getAttribute( PDO::ATTR_ERRMODE );
+-			$pdo->setAttribute( PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION );
++			$this->error_mode = $this->connection->get_attribute( PDO::ATTR_ERRMODE );
++			$this->connection->set_attribute( PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION );
+ 			return true;
+ 		}
+ 
+-		$result = $this->connection->get_pdo()->setAttribute( $attribute, $value );
++		$result = $this->connection->set_attribute( $attribute, $value );
+ 		if ( $result && PDO::ATTR_STRINGIFY_FETCHES === $attribute ) {
+ 			$this->stringify_fetches = (bool) $value;
+ 		}
+@@ -1477,7 +1464,7 @@ class WP_MySQL_On_SQLite extends PDO {
+ 			// PDO SQLite cannot report this attribute before PHP 8.2.
+ 			return $this->stringify_fetches;
+ 		}
+-		return $this->connection->get_pdo()->getAttribute( $attribute );
++		return $this->connection->get_attribute( $attribute );
+ 	}
+ 
+ 	/**
+@@ -1486,9 +1473,22 @@ class WP_MySQL_On_SQLite extends PDO {
+ 	 * Exposes the PDO SQLite connection for advanced use, bypassing MySQL emulation.
+ 	 * Do not retain it across reconnections or modify driver-owned state.
+ 	 *
++	 * Only connections backed by a local PDO SQLite handle can expose one. Remote
++	 * backends, such as the Cloudflare D1 connection, have no PDO instance to give.
++	 *
+ 	 * @return PDO The underlying PDO SQLite instance.
++	 *
++	 * @throws WP_MySQL_On_SQLite_Exception When the connection is not PDO-backed.
+ 	 */
+ 	public function get_sqlite_pdo(): PDO {
++		if ( ! $this->connection instanceof WP_SQLite_Connection ) {
++			throw $this->new_driver_exception(
++				sprintf(
++					'The "%s" connection is not backed by a PDO SQLite instance.',
++					get_class( $this->connection )
++				)
++			);
++		}
+ 		return $this->connection->get_pdo();
+ 	}
+ 
+@@ -1497,9 +1497,9 @@ class WP_MySQL_On_SQLite extends PDO {
+ 	 *
+ 	 * @access private
+ 	 *
+-	 * @return WP_SQLite_Connection
++	 * @return WP_SQLite_Connection_Interface
+ 	 */
+-	public function get_connection(): WP_SQLite_Connection {
++	public function get_connection(): WP_SQLite_Connection_Interface {
+ 		return $this->connection;
+ 	}
+ 
+@@ -1509,7 +1509,7 @@ class WP_MySQL_On_SQLite extends PDO {
+ 	 * @return string SQLite engine version as a string.
+ 	 */
+ 	public function get_sqlite_version(): string {
+-		return $this->connection->get_pdo()->getAttribute( PDO::ATTR_SERVER_VERSION );
++		return $this->connection->get_server_version();
+ 	}
+ 
+ 	/**
+@@ -2045,23 +2045,15 @@ class WP_MySQL_On_SQLite extends PDO {
+ 			return;
+ 		}
+ 
+-		$wrapper_transaction_type = $this->wrapper_transaction_type;
+ 		if ( $this->inTransaction() ) {
+-			$savepoint_name           = $this->get_internal_savepoint_name( 'wrapper' );
+-			$stmt                     = $this->connection->prepare( sprintf( 'SAVEPOINT %s', $savepoint_name ) );
+-			$wrapper_transaction_type = 'savepoint';
++			$this->connection->savepoint( $this->get_internal_savepoint_name( 'wrapper' ) );
++			$this->wrapper_transaction_type = 'savepoint';
+ 		} else {
+ 			// For write transactions, we must use "BEGIN IMMEDIATE".
+ 			// @see self::begin_user_transaction() method comments.
+-			$stmt                     = $this->connection->prepare( $this->is_readonly ? 'BEGIN' : 'BEGIN IMMEDIATE' );
+-			$wrapper_transaction_type = 'transaction';
++			$this->connection->begin_transaction( $this->is_readonly ? 'DEFERRED' : 'IMMEDIATE' );
++			$this->wrapper_transaction_type = 'transaction';
+ 		}
+-
+-		if ( ! $stmt->execute() ) {
+-			throw $this->new_driver_exception( 'Failed to begin wrapper transaction.' );
+-		}
+-		$this->wrapper_transaction_type = $wrapper_transaction_type;
+-		$this->in_transaction           = true;
+ 	}
+ 
+ 	/**
+@@ -2072,20 +2064,12 @@ class WP_MySQL_On_SQLite extends PDO {
+ 			return;
+ 		}
+ 
+-		$in_transaction = $this->in_transaction;
+ 		if ( 'savepoint' === $this->wrapper_transaction_type ) {
+-			$savepoint_name = $this->get_internal_savepoint_name( 'wrapper' );
+-			$stmt           = $this->connection->prepare( sprintf( 'RELEASE SAVEPOINT %s', $savepoint_name ) );
++			$this->connection->release_savepoint( $this->get_internal_savepoint_name( 'wrapper' ) );
+ 		} else {
+-			$stmt           = $this->connection->prepare( 'COMMIT' );
+-			$in_transaction = false;
+-		}
+-
+-		if ( ! $stmt->execute() ) {
+-			throw $this->new_driver_exception( 'Failed to commit wrapper transaction.' );
++			$this->connection->commit();
+ 		}
+ 		$this->wrapper_transaction_type = null;
+-		$this->in_transaction           = $in_transaction;
+ 	}
+ 
+ 	/**
+@@ -2107,8 +2091,7 @@ class WP_MySQL_On_SQLite extends PDO {
+ 		 *
+ 		 * @see self::begin_wrapper_transaction()
+ 		 */
+-		$this->connection->query( 'BEGIN IMMEDIATE' );
+-		$this->in_transaction  = true;
++		$this->connection->begin_transaction( 'IMMEDIATE' );
+ 		$this->savepoint_names = array();
+ 	}
+ 
+@@ -2120,8 +2103,7 @@ class WP_MySQL_On_SQLite extends PDO {
+ 		if ( ! $this->inTransaction() ) {
+ 			return;
+ 		}
+-		$this->connection->query( 'COMMIT' );
+-		$this->in_transaction  = false;
++		$this->connection->commit();
+ 		$this->savepoint_names = array();
+ 	}
+ 
+@@ -2133,8 +2115,7 @@ class WP_MySQL_On_SQLite extends PDO {
+ 		if ( ! $this->inTransaction() ) {
+ 			return;
+ 		}
+-		$this->connection->query( 'ROLLBACK' );
+-		$this->in_transaction  = false;
++		$this->connection->rollback();
+ 		$this->savepoint_names = array();
+ 	}
+ 
+@@ -2179,7 +2160,7 @@ class WP_MySQL_On_SQLite extends PDO {
+ 						if ( false === $index ) {
+ 							throw $this->new_savepoint_does_not_exist_exception( $savepoint_name );
+ 						}
+-						$this->execute_sqlite_query( sprintf( 'ROLLBACK TO SAVEPOINT %s', $savepoint_name ) );
++						$this->connection->rollback_to_savepoint( $this->unquote_sqlite_identifier( $savepoint_name ) );
+ 						array_splice( $this->savepoint_names, $index + 1 );
+ 					}
+ 					return;
+@@ -2192,7 +2173,7 @@ class WP_MySQL_On_SQLite extends PDO {
+ 					if ( ! $this->inTransaction() ) {
+ 						return;
+ 					}
+-					$this->execute_sqlite_query( sprintf( 'SAVEPOINT %s', $savepoint_name ) );
++					$this->connection->savepoint( $this->unquote_sqlite_identifier( $savepoint_name ) );
+ 
+ 					/*
+ 					 * MySQL deletes an existing savepoint when its name is reused, while
+@@ -2215,7 +2196,7 @@ class WP_MySQL_On_SQLite extends PDO {
+ 					if ( false === $index ) {
+ 						throw $this->new_savepoint_does_not_exist_exception( $savepoint_name );
+ 					}
+-					$this->execute_sqlite_query( sprintf( 'RELEASE SAVEPOINT %s', $savepoint_name ) );
++					$this->connection->release_savepoint( $this->unquote_sqlite_identifier( $savepoint_name ) );
+ 					array_splice( $this->savepoint_names, $index );
+ 					return;
+ 				}
+diff --git a/packages/mysql-on-sqlite/src/sqlite/class-wp-sqlite-configurator.php b/packages/mysql-on-sqlite/src/sqlite/class-wp-sqlite-configurator.php
+index 45da086..f4297e8 100644
+--- a/packages/mysql-on-sqlite/src/sqlite/class-wp-sqlite-configurator.php
++++ b/packages/mysql-on-sqlite/src/sqlite/class-wp-sqlite-configurator.php
+@@ -77,7 +77,8 @@ class WP_SQLite_Configurator {
+ 	public function configure_database(): void {
+ 		// Use an EXCLUSIVE transaction to prevent multiple connections
+ 		// from attempting to configure the database at the same time.
+-		$this->driver->execute_sqlite_query( 'BEGIN EXCLUSIVE TRANSACTION' );
++		$connection = $this->driver->get_connection();
++		$connection->begin_transaction( 'EXCLUSIVE' );
+ 		try {
+ 			$this->ensure_global_variables_table();
+ 			$this->schema_builder->ensure_information_schema_tables();
+@@ -85,10 +86,10 @@ class WP_SQLite_Configurator {
+ 			$this->save_current_driver_version();
+ 			$this->ensure_database_data();
+ 		} catch ( Throwable $e ) {
+-			$this->driver->execute_sqlite_query( 'ROLLBACK' );
++			$connection->rollback();
+ 			throw $e;
+ 		}
+-		$this->driver->execute_sqlite_query( 'COMMIT' );
++		$connection->commit();
+ 	}
+ 
+ 	/**
+diff --git a/packages/mysql-on-sqlite/src/sqlite/class-wp-sqlite-driver.php b/packages/mysql-on-sqlite/src/sqlite/class-wp-sqlite-driver.php
+index 73de870..a57d6ee 100644
+--- a/packages/mysql-on-sqlite/src/sqlite/class-wp-sqlite-driver.php
++++ b/packages/mysql-on-sqlite/src/sqlite/class-wp-sqlite-driver.php
+@@ -66,25 +66,30 @@ class WP_SQLite_Driver {
+ 	 *
+ 	 * Set up an SQLite connection and the MySQL-on-SQLite driver.
+ 	 *
+-	 * @param WP_SQLite_Connection $connection    A SQLite database connection.
+-	 * @param string               $database      The database name.
+-	 * @param int                  $mysql_version The emulated MySQL version as an integer.
++	 * @param WP_SQLite_Connection_Interface $connection    A SQLite database connection.
++	 * @param string                         $database      The database name.
++	 * @param int                            $mysql_version The emulated MySQL version as an integer.
++	 * @param array                          $options       Additional driver options,
++	 *                                                      as per WP_MySQL_On_SQLite.
+ 	 *
+ 	 * @throws WP_MySQL_On_SQLite_Exception When the driver initialization fails.
+ 	 */
+ 	public function __construct(
+-		WP_SQLite_Connection $connection,
++		WP_SQLite_Connection_Interface $connection,
+ 		string $database,
+-		int $mysql_version = WP_MySQL_On_SQLite::DEFAULT_MYSQL_VERSION
++		int $mysql_version = WP_MySQL_On_SQLite::DEFAULT_MYSQL_VERSION,
++		array $options = array()
+ 	) {
+ 		$this->mysql_on_sqlite_driver = new WP_MySQL_On_SQLite(
+ 			sprintf( 'mysql-on-sqlite:dbname=%s', str_replace( ';', ';;', $database ) ),
+ 			null,
+ 			null,
+-			array(
+-				'mysql_version'       => $mysql_version,
+-				'sqlite_pdo'          => $connection->get_pdo(),
+-				'sqlite_journal_mode' => $connection->query( 'PRAGMA journal_mode' )->fetchColumn(),
++			array_merge(
++				$options,
++				array(
++					'mysql_version'     => $mysql_version,
++					'sqlite_connection' => $connection,
++				)
+ 			)
+ 		);
+ 		$this->client_info            = $this->mysql_on_sqlite_driver->client_info;
+@@ -95,9 +100,9 @@ class WP_SQLite_Driver {
+ 	/**
+ 	 * Get the SQLite connection instance.
+ 	 *
+-	 * @return WP_SQLite_Connection
++	 * @return WP_SQLite_Connection_Interface
+ 	 */
+-	public function get_connection(): WP_SQLite_Connection {
++	public function get_connection(): WP_SQLite_Connection_Interface {
+ 		return $this->mysql_on_sqlite_driver->get_connection();
+ 	}
+ 
+diff --git a/packages/mysql-on-sqlite/src/sqlite/class-wp-sqlite-information-schema-builder.php b/packages/mysql-on-sqlite/src/sqlite/class-wp-sqlite-information-schema-builder.php
+index 3aa4069..47adb68 100644
+--- a/packages/mysql-on-sqlite/src/sqlite/class-wp-sqlite-information-schema-builder.php
++++ b/packages/mysql-on-sqlite/src/sqlite/class-wp-sqlite-information-schema-builder.php
+@@ -343,7 +343,7 @@ class WP_SQLite_Information_Schema_Builder {
+ 	/**
+ 	 * An instance of the SQLite connection.
+ 	 *
+-	 * @var WP_SQLite_Connection
++	 * @var WP_SQLite_Connection_Interface
+ 	 */
+ 	private $connection;
+ 
+@@ -351,9 +351,9 @@ class WP_SQLite_Information_Schema_Builder {
+ 	 * Constructor.
+ 	 *
+ 	 * @param string               $reserved_prefix An identifier prefix for internal database objects.
+-	 * @param WP_SQLite_Connection $connection      An instance of the SQLite connection.
++	 * @param WP_SQLite_Connection_Interface $connection An instance of the SQLite connection.
+ 	 */
+-	public function __construct( string $reserved_prefix, WP_SQLite_Connection $connection ) {
++	public function __construct( string $reserved_prefix, WP_SQLite_Connection_Interface $connection ) {
+ 		$this->connection             = $connection;
+ 		$this->table_prefix           = $reserved_prefix . 'mysql_information_schema_';
+ 		$this->temporary_table_prefix = $reserved_prefix . 'mysql_information_schema_tmp_';
+@@ -394,7 +394,7 @@ class WP_SQLite_Information_Schema_Builder {
+ 	 * database. Tables that are missing will be created.
+ 	 */
+ 	public function ensure_information_schema_tables(): void {
+-		$sqlite_version         = $this->connection->get_pdo()->getAttribute( PDO::ATTR_SERVER_VERSION ); // phpcs:ignore WordPress.DB.RestrictedClasses.mysql__PDO
++		$sqlite_version         = $this->connection->get_server_version();
+ 		$supports_strict_tables = version_compare( $sqlite_version, '3.37.0', '>=' );
+ 		foreach ( self::INFORMATION_SCHEMA_TABLE_DEFINITIONS as $table_name => $table_body ) {
+ 			$this->connection->query(
+@@ -462,7 +462,7 @@ class WP_SQLite_Information_Schema_Builder {
+ 	 * the SQLite database. Tables that are missing will be created.
+ 	 */
+ 	public function ensure_temporary_information_schema_tables(): void {
+-		$sqlite_version         = $this->connection->get_pdo()->getAttribute( PDO::ATTR_SERVER_VERSION ); // phpcs:ignore WordPress.DB.RestrictedClasses.mysql__PDO
++		$sqlite_version         = $this->connection->get_server_version();
+ 		$supports_strict_tables = version_compare( $sqlite_version, '3.37.0', '>=' );
+ 		foreach ( self::INFORMATION_SCHEMA_TABLE_DEFINITIONS as $table_name => $table_body ) {
+ 			// Skip the "schemata" table; MySQL doesn't support temporary databases.
+diff --git a/packages/mysql-on-sqlite/src/sqlite/class-wp-sqlite-information-schema-reconstructor.php b/packages/mysql-on-sqlite/src/sqlite/class-wp-sqlite-information-schema-reconstructor.php
+index e1d905a..da05636 100644
+--- a/packages/mysql-on-sqlite/src/sqlite/class-wp-sqlite-information-schema-reconstructor.php
++++ b/packages/mysql-on-sqlite/src/sqlite/class-wp-sqlite-information-schema-reconstructor.php
+@@ -28,7 +28,7 @@ class WP_SQLite_Information_Schema_Reconstructor {
+ 	/**
+ 	 * An instance of the SQLite connection.
+ 	 *
+-	 * @var WP_SQLite_Connection
++	 * @var WP_SQLite_Connection_Interface
+ 	 */
+ 	private $connection;
+ 
+diff --git a/packages/mysql-on-sqlite/src/sqlite/class-wp-sqlite-pdo-user-defined-functions.php b/packages/mysql-on-sqlite/src/sqlite/class-wp-sqlite-pdo-user-defined-functions.php
+index bacc834..cdbcd6a 100644
+--- a/packages/mysql-on-sqlite/src/sqlite/class-wp-sqlite-pdo-user-defined-functions.php
++++ b/packages/mysql-on-sqlite/src/sqlite/class-wp-sqlite-pdo-user-defined-functions.php
+@@ -13,20 +13,17 @@
+ class WP_SQLite_PDO_User_Defined_Functions {
+ 
+ 	/**
+-	 * Register the user-defined SQLite functions on a PDO connection.
++	 * Register the user-defined SQLite functions on a connection.
+ 	 *
+-	 * The functions are registered using PDO::sqliteCreateFunction().
++	 * The functions are implemented as PHP callbacks and registered using
++	 * the "create_function()" method of the SQLite connection interface.
+ 	 *
+-	 * @param PDO|Pdo\Sqlite $pdo The PDO object.
++	 * @param WP_SQLite_Connection_Interface $connection The SQLite connection.
+ 	 */
+-	public static function register_for( $pdo ): self {
++	public static function register_for( WP_SQLite_Connection_Interface $connection ): self {
+ 		$instance = new self();
+ 		foreach ( $instance->functions as $f => $t ) {
+-			if ( $pdo instanceof Pdo\Sqlite ) {
+-				$pdo->createFunction( $f, array( $instance, $t ) );
+-			} else {
+-				$pdo->sqliteCreateFunction( $f, array( $instance, $t ) );
+-			}
++			$connection->create_function( $f, array( $instance, $t ) );
+ 		}
+ 		return $instance;
+ 	}

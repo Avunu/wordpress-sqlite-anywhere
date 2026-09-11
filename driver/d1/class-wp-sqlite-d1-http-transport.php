@@ -29,7 +29,7 @@ class WP_SQLite_D1_HTTP_Transport implements WP_SQLite_D1_Transport_Interface {
 	/**
 	 * The base URL of the D1 proxy, e.g. "http://d1.internal".
 	 *
-	 * @var string
+	 * @var non-empty-string
 	 */
 	private $url;
 
@@ -57,7 +57,7 @@ class WP_SQLite_D1_HTTP_Transport implements WP_SQLite_D1_Transport_Interface {
 	/**
 	 * The reusable cURL handle.
 	 *
-	 * @var resource|CurlHandle|null
+	 * @var CurlHandle|null
 	 */
 	private $curl;
 
@@ -66,7 +66,7 @@ class WP_SQLite_D1_HTTP_Transport implements WP_SQLite_D1_Transport_Interface {
 	 *
 	 * @param string      $url     The base URL of the D1 proxy.
 	 * @param string|null $token   Optional. A bearer token for the proxy.
-	 * @param array       $options {
+	 * @param array<string, mixed> $options {
 	 *     Optional. An array of options.
 	 *
 	 *     @type int $timeout_ms         The request timeout, in milliseconds.
@@ -74,7 +74,11 @@ class WP_SQLite_D1_HTTP_Transport implements WP_SQLite_D1_Transport_Interface {
 	 * }
 	 */
 	public function __construct( string $url, ?string $token = null, array $options = array() ) {
-		$this->url                = rtrim( $url, '/' );
+		$url = rtrim( $url, '/' );
+		if ( '' === $url ) {
+			throw new InvalidArgumentException( 'The D1 proxy URL must not be empty.' );
+		}
+		$this->url                = $url;
 		$this->token              = $token;
 		$this->timeout_ms         = (int) ( $options['timeout_ms'] ?? self::DEFAULT_TIMEOUT_MS );
 		$this->connect_timeout_ms = (int) ( $options['connect_timeout_ms'] ?? self::DEFAULT_CONNECT_TIMEOUT_MS );
@@ -138,11 +142,16 @@ class WP_SQLite_D1_HTTP_Transport implements WP_SQLite_D1_Transport_Interface {
 	/**
 	 * Get the reusable cURL handle, creating it when needed.
 	 *
-	 * @return resource|CurlHandle The cURL handle.
+	 * @return CurlHandle The cURL handle.
+	 * @throws WP_SQLite_D1_Exception When cURL cannot allocate a handle.
 	 */
-	private function get_curl_handle() {
+	private function get_curl_handle(): CurlHandle {
 		if ( null === $this->curl ) {
-			$this->curl = curl_init();
+			$curl = curl_init();
+			if ( false === $curl ) {
+				throw WP_SQLite_D1_Exception::from_transport_failure( 'cURL could not be initialised.' );
+			}
+			$this->curl = $curl;
 			curl_setopt( $this->curl, CURLOPT_RETURNTRANSFER, true );
 			curl_setopt( $this->curl, CURLOPT_TIMEOUT_MS, $this->timeout_ms );
 			curl_setopt( $this->curl, CURLOPT_CONNECTTIMEOUT_MS, $this->connect_timeout_ms );

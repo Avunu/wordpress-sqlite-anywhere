@@ -16,8 +16,8 @@ class WP_SQLite_D1_Response {
 	/**
 	 * Encode query parameters for a proxy request.
 	 *
-	 * @param  array $params The positional query parameters.
-	 * @return array         The JSON-encodable parameters.
+	 * @param  SqliteParams $params The positional query parameters.
+	 * @return list<mixed>          The JSON-encodable parameters.
 	 */
 	public static function encode_params( array $params ): array {
 		$encoded = array();
@@ -38,7 +38,7 @@ class WP_SQLite_D1_Response {
 	 * Decode a result object from a proxy response.
 	 *
 	 * @param  mixed $result The decoded JSON result object.
-	 * @return array{columns: string[], rows: array[], meta: array} The result.
+	 * @return RemoteResult  The result.
 	 * @throws WP_SQLite_D1_Exception When the result shape is invalid.
 	 */
 	public static function decode_result( $result ): array {
@@ -48,13 +48,22 @@ class WP_SQLite_D1_Response {
 			|| ! is_array( $result['columns'] )
 			|| ! is_array( $result['rows'] )
 		) {
-			throw WP_SQLite_D1_Exception::from_transport_failure(
-				'The D1 proxy returned a result with an invalid shape.'
-			);
+			throw self::invalid_shape();
+		}
+
+		$columns = array();
+		foreach ( $result['columns'] as $column ) {
+			if ( ! is_string( $column ) ) {
+				throw self::invalid_shape();
+			}
+			$columns[] = $column;
 		}
 
 		$rows = array();
 		foreach ( $result['rows'] as $row ) {
+			if ( ! is_array( $row ) ) {
+				throw self::invalid_shape();
+			}
 			$values = array();
 			foreach ( $row as $value ) {
 				$values[] = self::decode_value( $value );
@@ -64,7 +73,7 @@ class WP_SQLite_D1_Response {
 
 		$meta = is_array( $result['meta'] ?? null ) ? $result['meta'] : array();
 		return array(
-			'columns' => $result['columns'],
+			'columns' => $columns,
 			'rows'    => $rows,
 			'meta'    => array(
 				'changes'     => (int) ( $meta['changes'] ?? 0 ),
@@ -77,17 +86,31 @@ class WP_SQLite_D1_Response {
 	 * Decode a single result value from a proxy response.
 	 *
 	 * @param  mixed $value The decoded JSON value.
-	 * @return mixed        The PHP value.
+	 * @return SqliteValue  The PHP value.
+	 * @throws WP_SQLite_D1_Exception When the value is not one the protocol can carry.
 	 */
 	public static function decode_value( $value ) {
-		if (
-			is_array( $value )
-			&& isset( $value['$type'], $value['b64'] )
-			&& 'blob' === $value['$type']
-		) {
-			return base64_decode( $value['b64'] );
+		if ( is_array( $value ) ) {
+			if ( isset( $value['$type'], $value['b64'] ) && 'blob' === $value['$type'] && is_string( $value['b64'] ) ) {
+				return (string) base64_decode( $value['b64'] );
+			}
+			throw self::invalid_shape();
+		}
+		if ( null !== $value && ! is_scalar( $value ) ) {
+			throw self::invalid_shape();
 		}
 		return $value;
+	}
+
+	/**
+	 * The exception for a response that does not have the protocol's shape.
+	 *
+	 * @return WP_SQLite_D1_Exception The exception.
+	 */
+	private static function invalid_shape(): WP_SQLite_D1_Exception {
+		return WP_SQLite_D1_Exception::from_transport_failure(
+			'The D1 proxy returned a result with an invalid shape.'
+		);
 	}
 
 	/**

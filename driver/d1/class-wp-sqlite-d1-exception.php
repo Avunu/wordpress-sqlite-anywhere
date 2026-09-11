@@ -31,8 +31,8 @@ class WP_SQLite_D1_Exception extends PDOException {
 	 */
 	public static function from_proxy_error( ?string $error_code, string $message, ?int $http_status = null ): self {
 		// Strip the D1 message decorations around the SQLite error message.
-		$message = preg_replace( '/^D1_[A-Z_]*ERROR: /', '', $message );
-		$message = preg_replace( '/: SQLITE_[A-Z_]+$/', '', $message );
+		$message = (string) preg_replace( '/^D1_[A-Z_]*ERROR: /', '', $message );
+		$message = (string) preg_replace( '/: SQLITE_[A-Z_]+$/', '', $message );
 
 		if ( null !== $error_code && 0 === strpos( $error_code, 'SQLITE_CONSTRAINT' ) ) {
 			// SQLite error code 19: SQLITE_CONSTRAINT.

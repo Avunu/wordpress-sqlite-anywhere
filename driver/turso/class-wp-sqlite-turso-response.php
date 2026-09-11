@@ -20,8 +20,8 @@ class WP_SQLite_Turso_Response {
 	/**
 	 * Encode query parameters as Turso protocol values.
 	 *
-	 * @param  array $params The positional query parameters.
-	 * @return array         The JSON-encodable argument list.
+	 * @param  SqliteParams $params The positional query parameters.
+	 * @return list<array<string, mixed>> The JSON-encodable argument list.
 	 */
 	public static function encode_params( array $params ): array {
 		$encoded = array();
@@ -35,7 +35,7 @@ class WP_SQLite_Turso_Response {
 	 * Encode a single PHP value as a Turso protocol value.
 	 *
 	 * @param  mixed $value The PHP value.
-	 * @return array        The JSON-encodable value.
+	 * @return array<string, mixed> The JSON-encodable value.
 	 */
 	public static function encode_value( $value ): array {
 		if ( null === $value ) {
@@ -77,7 +77,7 @@ class WP_SQLite_Turso_Response {
 	 * Decode a statement result from a pipeline response.
 	 *
 	 * @param  mixed $result The decoded JSON "result" object.
-	 * @return array{columns: string[], rows: array[], meta: array} The result.
+	 * @return RemoteResult  The result.
 	 * @throws WP_SQLite_Turso_Exception When the result shape is invalid.
 	 */
 	public static function decode_result( $result ): array {
@@ -94,7 +94,13 @@ class WP_SQLite_Turso_Response {
 
 		$columns = array();
 		foreach ( $result['cols'] as $column ) {
-			$columns[] = is_array( $column ) ? (string) ( $column['name'] ?? '' ) : (string) $column;
+			$name = is_array( $column ) ? ( $column['name'] ?? '' ) : $column;
+			if ( ! is_scalar( $name ) ) {
+				throw WP_SQLite_Turso_Exception::from_transport_failure(
+					'Turso returned a statement result with an invalid shape.'
+				);
+			}
+			$columns[] = (string) $name;
 		}
 
 		$rows = array();
@@ -126,11 +132,17 @@ class WP_SQLite_Turso_Response {
 	 * Decode a single protocol value to a PHP value.
 	 *
 	 * @param  mixed $value The decoded JSON value.
-	 * @return mixed        The PHP value.
+	 * @return SqliteValue  The PHP value.
+	 * @throws WP_SQLite_Turso_Exception When the value is not one the protocol can carry.
 	 */
 	public static function decode_value( $value ) {
 		if ( ! is_array( $value ) || ! isset( $value['type'] ) ) {
 			// Already a bare scalar; nothing to unwrap.
+			if ( null !== $value && ! is_scalar( $value ) ) {
+				throw WP_SQLite_Turso_Exception::from_transport_failure(
+					'Turso returned a value with an invalid shape.'
+				);
+			}
 			return $value;
 		}
 
@@ -138,18 +150,18 @@ class WP_SQLite_Turso_Response {
 			case 'null':
 				return null;
 			case 'integer':
-				$raw = (string) ( $value['value'] ?? '0' );
+				$raw = is_scalar( $value['value'] ?? null ) ? (string) $value['value'] : '0';
 				// Keep values outside PHP's integer range as strings, as PDO does.
 				$int = (int) $raw;
 				return (string) $int === $raw ? $int : $raw;
 			case 'float':
-				return (float) ( $value['value'] ?? 0.0 );
+				return is_numeric( $value['value'] ?? null ) ? (float) $value['value'] : 0.0;
 			case 'blob':
 				// Turso may omit base64 padding; base64_decode() tolerates that.
-				return (string) base64_decode( (string) ( $value['base64'] ?? '' ) );
+				return (string) base64_decode( is_string( $value['base64'] ?? null ) ? $value['base64'] : '' );
 			case 'text':
 			default:
-				return isset( $value['value'] ) ? (string) $value['value'] : null;
+				return isset( $value['value'] ) && is_scalar( $value['value'] ) ? (string) $value['value'] : null;
 		}
 	}
 

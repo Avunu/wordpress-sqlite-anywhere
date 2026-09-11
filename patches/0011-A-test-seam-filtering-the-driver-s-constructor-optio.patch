@@ -1,0 +1,46 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Kevin Shenk <kevin@avu.nu>
+Date: Fri, 11 Sep 2026 18:18:21 -0400
+Subject: [PATCH 11/11] A test seam filtering the driver's constructor options
+
+WP_MySQL_On_SQLite::$options_filter lets the driver test suites run
+unmodified against every connection backend: the test bootstrap installs a
+callback that swaps the "sqlite_pdo" of every instance for a remote
+connection over a fake transport. Null in production; inert.
+---
+ .../src/sqlite/class-wp-mysql-on-sqlite.php       | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+diff --git a/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php b/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php
+index 0dba573..a173636 100644
+--- a/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php
++++ b/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php
+@@ -514,6 +514,18 @@ class WP_MySQL_On_SQLite extends PDO {
+ 	 */
+ 	private static $mysql_grammar;
+ 
++	/**
++	 * A test seam: a callback filtering the constructor options.
++	 *
++	 * The driver test suites run against every connection backend without
++	 * their own code changing: when set, the callback receives the options
++	 * of every instance created and may substitute a "sqlite_connection".
++	 * Never set outside tests.
++	 *
++	 * @var callable|null
++	 */
++	public static $options_filter = null;
++
+ 	/**
+ 	 * A reusable parser instance for MySQL queries.
+ 	 *
+@@ -834,6 +846,9 @@ class WP_MySQL_On_SQLite extends PDO {
+ 		?array $options = null
+ 	) {
+ 		$options = $options ?? array();
++		if ( null !== self::$options_filter ) {
++			$options = call_user_func( self::$options_filter, $options, $dsn );
++		}
+ 
+ 		// PDO DSN can't include "\0" bytes; parsing stops at the first one.
+ 		$first_null_byte_index = strpos( $dsn, "\0" );

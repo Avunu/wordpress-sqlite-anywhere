@@ -28,9 +28,9 @@ trait WP_SQLite_D1_Protocol {
 	/**
 	 * Execute a single SQL statement. See the transport interface.
 	 *
-	 * @param  string $sql    The SQL statement to execute.
-	 * @param  array  $params Positional query parameters.
-	 * @return array          The result.
+	 * @param  string       $sql    The SQL statement to execute.
+	 * @param  SqliteParams $params Positional query parameters.
+	 * @return RemoteResult         The result.
 	 * @throws WP_SQLite_D1_Exception When the execution or transport fails.
 	 */
 	public function query( string $sql, array $params = array() ): array {
@@ -47,8 +47,8 @@ trait WP_SQLite_D1_Protocol {
 	/**
 	 * Execute a batch of SQL statements atomically. See the transport interface.
 	 *
-	 * @param  array<int, array{0: string, 1?: array}> $statements The statements to execute.
-	 * @return array[] One result per statement.
+	 * @param  SqliteBatch $statements The statements to execute.
+	 * @return list<RemoteResult>      One result per statement.
 	 * @throws WP_SQLite_D1_Exception When the execution or transport fails.
 	 */
 	public function batch( array $statements ): array {
@@ -95,9 +95,9 @@ trait WP_SQLite_D1_Protocol {
 	/**
 	 * Send a request to the D1 proxy and return the decoded response body.
 	 *
-	 * @param  string $path    The endpoint path, e.g. "/v1/query".
-	 * @param  array  $payload The JSON-encodable request payload.
-	 * @return array           The decoded successful response body.
+	 * @param  string               $path    The endpoint path, e.g. "/v1/query".
+	 * @param  array<string, mixed> $payload The JSON-encodable request payload.
+	 * @return array<string, mixed>          The decoded successful response body.
 	 * @throws WP_SQLite_D1_Exception When the request or the statement fails.
 	 */
 	private function send_payload( string $path, array $payload ): array {

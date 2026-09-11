@@ -79,7 +79,7 @@ class WP_SQLite_Turso_Replica_Connection implements WP_SQLite_Connection_Interfa
 	/**
 	 * A query logger callback.
 	 *
-	 * @var callable(string, array): void
+	 * @var SqliteQueryLogger|null
 	 */
 	private $query_logger;
 
@@ -176,7 +176,7 @@ class WP_SQLite_Turso_Replica_Connection implements WP_SQLite_Connection_Interfa
 	 * Execute a query, routing it to the snapshot or the primary.
 	 *
 	 * @param  string $sql    The query to execute.
-	 * @param  array  $params The query parameters.
+	 * @param  SqliteParams $params The query parameters.
 	 * @throws PDOException  When the query execution fails.
 	 * @return PDOStatement  The PDO statement object.
 	 */
@@ -192,9 +192,9 @@ class WP_SQLite_Turso_Replica_Connection implements WP_SQLite_Connection_Interfa
 	 *
 	 * A batch is a write by definition, so it latches.
 	 *
-	 * @param  array<int, array{0: string, 1?: array}> $statements The queries.
+	 * @param  SqliteBatch $statements The queries.
 	 * @throws PDOException   When the execution of any query fails.
-	 * @return PDOStatement[] The PDO statement objects, one for each query.
+	 * @return list<PDOStatement> The PDO statement objects, one for each query.
 	 */
 	public function execute_batch( array $statements ): array {
 		return $this->latch()->execute_batch( $statements );
@@ -366,7 +366,7 @@ class WP_SQLite_Turso_Replica_Connection implements WP_SQLite_Connection_Interfa
 	/**
 	 * Set a logger for the queries.
 	 *
-	 * @param callable(string, array): void $logger A query logger callback.
+	 * @param SqliteQueryLogger $logger A query logger callback.
 	 */
 	public function set_query_logger( callable $logger ): void {
 		$this->query_logger = $logger;

@@ -46,8 +46,8 @@ interface WP_SQLite_Connection_Interface {
 	/**
 	 * Execute a query in SQLite.
 	 *
-	 * @param  string $sql   The query to execute.
-	 * @param  array $params The query parameters.
+	 * @param  string       $sql    The query to execute.
+	 * @param  SqliteParams $params The query parameters.
 	 * @throws PDOException  When the query execution fails.
 	 * @return PDOStatement  The PDO statement object.
 	 */
@@ -63,11 +63,11 @@ interface WP_SQLite_Connection_Interface {
 	 * The queries in a batch must not consume each other's results, and
 	 * must not include any transaction control statements.
 	 *
-	 * @param  array<int, array{0: string, 1?: array}> $statements
+	 * @param  SqliteBatch $statements
 	 *                       The queries to execute, each being an array of
 	 *                       a query string and optional query parameters.
 	 * @throws PDOException  When the execution of any of the queries fails.
-	 * @return PDOStatement[] The PDO statement objects, one for each query.
+	 * @return list<PDOStatement> The PDO statement objects, one for each query.
 	 */
 	public function execute_batch( array $statements ): array;
 
@@ -207,7 +207,7 @@ interface WP_SQLite_Connection_Interface {
 	/**
 	 * Set a logger for the queries.
 	 *
-	 * @param callable(string, array): void $logger A query logger callback.
+	 * @param SqliteQueryLogger $logger A query logger callback.
 	 */
 	public function set_query_logger( callable $logger ): void;
 }

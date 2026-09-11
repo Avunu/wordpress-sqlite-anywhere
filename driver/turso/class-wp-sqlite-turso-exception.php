@@ -37,7 +37,7 @@ class WP_SQLite_Turso_Exception extends PDOException {
 		 * as "Tursodb error: <stage> error: <message>". The driver matches on
 		 * the bare message to give errors their MySQL identity.
 		 */
-		$message = preg_replace(
+		$message = (string) preg_replace(
 			'/^(?:Tursodb error: )?(?:(?:Parse|Transaction|Runtime|Prepare|Execute) error: )?/',
 			'',
 			$message

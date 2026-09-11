@@ -1,0 +1,28 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Kevin Shenk <kevin@avu.nu>
+Date: Fri, 11 Sep 2026 18:18:18 -0400
+Subject: [PATCH 02/11] WP_SQLite_Connection: implement
+ WP_SQLite_Connection_Interface
+
+The methods the interface adds (batches, transaction control, attributes,
+user-defined functions, capabilities) come from the overlay trait, which may
+use the private $pdo; the class itself changes by two lines.
+---
+ .../mysql-on-sqlite/src/sqlite/class-wp-sqlite-connection.php | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/packages/mysql-on-sqlite/src/sqlite/class-wp-sqlite-connection.php b/packages/mysql-on-sqlite/src/sqlite/class-wp-sqlite-connection.php
+index 78461f1..c53eb90 100644
+--- a/packages/mysql-on-sqlite/src/sqlite/class-wp-sqlite-connection.php
++++ b/packages/mysql-on-sqlite/src/sqlite/class-wp-sqlite-connection.php
+@@ -15,7 +15,9 @@
+  *
+  * @access private
+  */
+-class WP_SQLite_Connection {
++class WP_SQLite_Connection implements WP_SQLite_Connection_Interface {
++	use WP_SQLite_PDO_Connection_Methods;
++
+ 	/**
+ 	 * The default timeout in seconds for SQLite to wait for a writable lock.
+ 	 */

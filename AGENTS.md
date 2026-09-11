@@ -51,9 +51,14 @@ nix build .#zip                 # result/wordpress-sqlite-anywhere.zip
   single source of truth; the plugin header is stamped from it at build time and checked in CI).
   Dependency bumps are `chore` so they never force a release. A driver bump is
   `feat(driver): bump bundled driver to vX.Y.Z`.
-- The upstream driver's test suites run against every backend. A test that a remote backend cannot
-  satisfy is skipped through the skip list in `driver-tests/tools/backend-factory.php`, never by
-  patching upstream's test file.
+- The upstream driver's test suites run against every backend through the thin subclasses in
+  `driver-tests/remote/` and the options-filter seam (patch 0011). A test that a remote backend
+  cannot satisfy is skipped through the skip list in `driver-tests/tools/backend-factory.php`, never
+  by patching upstream's test file.
+- PHPStan covers `driver/` at level 8 with the type aliases declared in `phpstan.neon.dist`
+  (`SqliteParams`, `SqliteBatch`, `RemoteResult`, ...); use them in docblocks rather than spelling
+  the shapes out. The one `ignoreErrors` entry is for upstream's connection class, analysed only so
+  the trait it uses is.
 - `SQLITE_DRIVER_VERSION` stays upstream's. The plugin version is independent semver.
 - Two PHPUnit majors on purpose: 12 for `src/`, 9 for upstream's suites (they use PHPUnit 8/9 APIs),
   kept in separate composer projects.

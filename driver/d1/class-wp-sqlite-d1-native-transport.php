@@ -19,7 +19,7 @@ class WP_SQLite_D1_Native_Transport extends WP_SQLite_D1_Native_Client implement
 	 *
 	 * @param string      $url     The base URL of the D1 proxy.
 	 * @param string|null $token   Optional. A bearer token for the proxy.
-	 * @param array       $options {
+	 * @param array<string, mixed> $options {
 	 *     Optional. An array of options.
 	 *
 	 *     @type int $timeout_ms         The request timeout, in milliseconds.

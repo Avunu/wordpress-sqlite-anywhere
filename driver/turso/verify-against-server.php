@@ -28,8 +28,8 @@ require_once __DIR__ . '/load.php';
 $snapshot = getenv( 'SNAPSHOT' );
 $url      = getenv( 'PRIMARY_URL' );
 
-if ( ! $url ) {
-	fwrite( STDERR, "Set PRIMARY_URL (and optionally SNAPSHOT).\n" );
+if ( false === $url || '' === $url || false === $snapshot || '' === $snapshot ) {
+	fwrite( STDERR, "Set PRIMARY_URL and SNAPSHOT.\n" );
 	exit( 1 );
 }
 
@@ -38,6 +38,10 @@ function section( string $title ): void {
 }
 
 $connection = wp_sqlite_turso_create_connection( $url, null, $snapshot );
+if ( ! $connection instanceof WP_SQLite_Turso_Replica_Connection ) {
+	fwrite( STDERR, "Expected a replica connection; is SNAPSHOT readable?\n" );
+	exit( 1 );
+}
 printf( "connection: %s\n", get_class( $connection ) );
 printf( "server version (from the snapshot): %s\n", $connection->get_server_version() );
 

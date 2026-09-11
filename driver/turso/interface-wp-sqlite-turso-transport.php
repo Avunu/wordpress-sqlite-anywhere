@@ -24,9 +24,9 @@ interface WP_SQLite_Turso_Transport_Interface {
 	/**
 	 * Execute a single SQL statement.
 	 *
-	 * @param  string $sql    The SQL statement to execute.
-	 * @param  array  $params Positional query parameters.
-	 * @return array          The result. See the interface description.
+	 * @param  string       $sql    The SQL statement to execute.
+	 * @param  SqliteParams $params Positional query parameters.
+	 * @return RemoteResult         The result. See the interface description.
 	 * @throws WP_SQLite_Turso_Exception When the execution or transport fails.
 	 */
 	public function query( string $sql, array $params = array() ): array;
@@ -36,10 +36,10 @@ interface WP_SQLite_Turso_Transport_Interface {
 	 *
 	 * When any statement fails, none of the statements take effect.
 	 *
-	 * @param  array<int, array{0: string, 1?: array}> $statements
+	 * @param  SqliteBatch $statements
 	 *                The statements to execute, each being an array of
 	 *                an SQL string and optional positional parameters.
-	 * @return array[] One result per statement. See the interface description.
+	 * @return list<RemoteResult> One result per statement. See the interface description.
 	 * @throws WP_SQLite_Turso_Exception When the execution or transport fails.
 	 */
 	public function batch( array $statements ): array;

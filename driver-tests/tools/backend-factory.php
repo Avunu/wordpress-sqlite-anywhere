@@ -39,81 +39,49 @@ function wp_sqlite_tests_backend(): string {
 }
 
 /**
- * Create a driver instance using the selected test backend.
+ * Wrap a local SQLite handle in the selected remote backend's connection.
  *
- * @param  PDO|null $sqlite  Set to the underlying SQLite PDO handle, which
- *                           tests can use to inspect the raw database state.
- * @param  string   $db_name The database name.
- * @return WP_SQLite_Driver  The driver.
+ * The fake transport runs the backend's protocol against the handle, so the
+ * tests can inspect the raw database state through it as they do with the
+ * PDO backend.
+ *
+ * @param  PDO $sqlite The SQLite handle backing the fake transport.
+ * @return WP_SQLite_Connection_Interface The remote connection.
  */
-function wp_sqlite_tests_create_engine( ?PDO &$sqlite = null, string $db_name = 'wp' ): WP_SQLite_Driver {
-	$pdo_class = PHP_VERSION_ID >= 80400 ? PDO\SQLite::class : PDO::class;
-	$sqlite    = new $pdo_class( 'sqlite::memory:' );
+function wp_sqlite_tests_create_remote_connection( PDO $sqlite ): WP_SQLite_Connection_Interface {
+	// Stringify fetches on the raw handle, so that direct assertions
+	// against it behave as they do with the PDO backend.
+	$sqlite->setAttribute( PDO::ATTR_STRINGIFY_FETCHES, true );
 
 	if ( 'd1' === wp_sqlite_tests_backend() ) {
-		// Stringify fetches on the raw handle, so that direct assertions
-		// against it behave as they do with the PDO backend.
-		$sqlite->setAttribute( PDO::ATTR_STRINGIFY_FETCHES, true );
-		$connection = new WP_SQLite_D1_Connection( new WP_SQLite_D1_Fake_Transport( $sqlite ) );
-
-		// Transactional statements are ignored: PHPUnit converts the
-		// "warn" fallback warnings to test errors.
-		return new WP_SQLite_Driver( $connection, $db_name, 80038, array( 'transaction_fallback' => 'ignore' ) );
+		return new WP_SQLite_D1_Connection( new WP_SQLite_D1_Fake_Transport( $sqlite ) );
 	}
-
-	if ( 'turso' === wp_sqlite_tests_backend() ) {
-		$sqlite->setAttribute( PDO::ATTR_STRINGIFY_FETCHES, true );
-		$connection = new WP_SQLite_Turso_Connection( new WP_SQLite_Turso_Fake_Transport( $sqlite ) );
-
-		return new WP_SQLite_Driver( $connection, $db_name, 80038, array( 'transaction_fallback' => 'ignore' ) );
-	}
-
-	return new WP_SQLite_Driver(
-		new WP_SQLite_Connection( array( 'pdo' => $sqlite ) ),
-		$db_name
-	);
+	return new WP_SQLite_Turso_Connection( new WP_SQLite_Turso_Fake_Transport( $sqlite ) );
 }
 
-/**
- * Create a raw engine (PDO API) instance using the selected test backend.
+/*
+ * Run upstream's test suites against a remote backend without changing them.
  *
- * @param  string   $dsn    The engine DSN.
- * @param  PDO|null $sqlite Set to the underlying SQLite PDO handle, which
- *                          tests can use to inspect the raw database state.
- * @return WP_MySQL_On_SQLite The engine.
+ * Their setUp() methods construct "new WP_MySQL_On_SQLite( $dsn, null, null,
+ * array( 'sqlite_pdo' => $this->sqlite ) )" -- or, for the PDO API tests, an
+ * in-memory path in the DSN. The driver's options filter (a test seam the
+ * patch series adds) hands every such option set through here, where the
+ * local handle is wrapped in the selected backend's connection over its fake
+ * transport. Transactional statements are ignored rather than warned about:
+ * PHPUnit converts the "warn" fallback's warnings to test errors.
  */
-function wp_sqlite_tests_create_pdo_engine( string $dsn, ?PDO &$sqlite = null ): WP_MySQL_On_SQLite {
-	$pdo_class = PHP_VERSION_ID >= 80400 ? PDO\SQLite::class : PDO::class;
-	$sqlite    = new $pdo_class( 'sqlite::memory:' );
+if ( 'd1' === wp_sqlite_tests_backend() || 'turso' === wp_sqlite_tests_backend() ) {
+	WP_MySQL_On_SQLite::$options_filter = function ( array $options, string $dsn ): array {
+		if ( isset( $options['sqlite_connection'] ) ) {
+			return $options;
+		}
+		$sqlite = $options['sqlite_pdo'] ?? new PDO\SQLite( 'sqlite::memory:' );
+		unset( $options['sqlite_pdo'] );
 
-	if ( 'd1' === wp_sqlite_tests_backend() ) {
-		// Stringify fetches on the raw handle, so that direct assertions
-		// against it behave as they do with the PDO backend.
-		$sqlite->setAttribute( PDO::ATTR_STRINGIFY_FETCHES, true );
-		return new WP_MySQL_On_SQLite(
-			$dsn,
-			null,
-			null,
-			array(
-				'sqlite_connection'    => new WP_SQLite_D1_Connection( new WP_SQLite_D1_Fake_Transport( $sqlite ) ),
-				'transaction_fallback' => 'ignore',
-			)
-		);
-	}
-
-	if ( 'turso' === wp_sqlite_tests_backend() ) {
-		$sqlite->setAttribute( PDO::ATTR_STRINGIFY_FETCHES, true );
-		return new WP_MySQL_On_SQLite(
-			$dsn,
-			null,
-			null,
-			array(
-				'sqlite_connection'    => new WP_SQLite_Turso_Connection( new WP_SQLite_Turso_Fake_Transport( $sqlite ) ),
-				'transaction_fallback' => 'ignore',
-			)
-		);
-	}
-	return new WP_MySQL_On_SQLite( $dsn, null, null, array( 'sqlite_pdo' => $sqlite ) );
+		$options['sqlite_connection']    = wp_sqlite_tests_create_remote_connection( $sqlite );
+		$options['transaction_fallback'] = $options['transaction_fallback'] ?? 'ignore';
+		return $options;
+	};
 }
 
 /**
@@ -141,6 +109,7 @@ function wp_sqlite_tests_skip_unsupported( PHPUnit\Framework\TestCase $test ): v
 		'native types'     => 'The fake transport cannot carry native value types before PHP 8.1.',
 		'savepoints'       => $name . ' does not support savepoints.',
 		'native statement' => 'The test inspects the PDO SQLite handle behind the connection, which a remote backend does not have.',
+		'local connection' => 'The test configures the local PDO SQLite connection the driver opens itself, which a remote backend replaces.',
 	);
 
 	/*
@@ -149,9 +118,13 @@ function wp_sqlite_tests_skip_unsupported( PHPUnit\Framework\TestCase $test ): v
 	 * the connection classes document.
 	 */
 	$skip_list = wp_sqlite_tests_remote_backend_skip_list();
-	$test_name = get_class( $test ) . '::' . $test->getName( false );
-	if ( isset( $skip_list[ $test_name ] ) ) {
-		$test->markTestSkipped( $reasons[ $skip_list[ $test_name ] ] );
+	$method    = $test->getName( false );
+	// The remote suites are thin subclasses of upstream's; the list names
+	// upstream's classes.
+	foreach ( array_merge( array( get_class( $test ) ), array_values( class_parents( $test ) ) ) as $class ) {
+		if ( isset( $skip_list[ $class . '::' . $method ] ) ) {
+			$test->markTestSkipped( $reasons[ $skip_list[ $class . '::' . $method ] ] );
+		}
 	}
 }
 
@@ -203,6 +176,19 @@ function wp_sqlite_tests_remote_backend_skip_list(): array {
 		 */
 		'WP_MySQL_On_SQLite_PDO_API_Tests::test_reports_mysql_driver_name' => 'native statement',
 		'WP_MySQL_On_SQLite_PDO_API_Tests::test_statement_column_metadata_is_resolved_lazily' => 'native statement',
+
+		/*
+		 * These construct their own driver instance to exercise the options of
+		 * the local PDO SQLite connection (persistence, journal mode, the raw
+		 * handle). Under a remote backend the options filter replaces that
+		 * connection, so there is nothing for them to observe.
+		 */
+		'WP_MySQL_On_SQLite_PDO_API_Tests::test_static_connect' => 'local connection',
+		'WP_MySQL_On_SQLite_PDO_API_Tests::test_constructor_applies_pdo_options' => 'local connection',
+		'WP_MySQL_On_SQLite_PDO_API_Tests::test_constructor_applies_persistent_option' => 'local connection',
+		'WP_MySQL_On_SQLite_PDO_API_Tests::test_exposes_underlying_sqlite_pdo' => 'local connection',
+		'WP_MySQL_On_SQLite_PDO_API_Tests::test_journal_mode_defaults_to_wal' => 'local connection',
+		'WP_MySQL_On_SQLite_PDO_API_Tests::test_journal_mode_and_synchronous_driver_options' => 'local connection',
 
 		// LIKE BINARY against a non-constant pattern needs a user-defined function.
 		'WP_MySQL_On_SQLite_Tests::testLikeBinaryPreservesPatternBytes' => 'PHP evaluation',

@@ -34,7 +34,7 @@ if ( class_exists( 'WP_SQLite_D1_Native_Client', false ) ) {
  *
  * @param  string      $url     The base URL of the D1 proxy.
  * @param  string|null $token   Optional. A bearer token for the proxy.
- * @param  array       $options Optional. Transport options.
+ * @param  array<string, mixed> $options Optional. Transport options.
  * @return WP_SQLite_D1_Transport_Interface The transport.
  */
 function wp_sqlite_d1_create_transport( string $url, ?string $token = null, array $options = array() ): WP_SQLite_D1_Transport_Interface {

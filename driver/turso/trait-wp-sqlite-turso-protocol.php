@@ -63,9 +63,9 @@ trait WP_SQLite_Turso_Protocol {
 	/**
 	 * Execute a single SQL statement. See the transport interface.
 	 *
-	 * @param  string $sql    The SQL statement to execute.
-	 * @param  array  $params Positional query parameters.
-	 * @return array          The result.
+	 * @param  string       $sql    The SQL statement to execute.
+	 * @param  SqliteParams $params Positional query parameters.
+	 * @return RemoteResult         The result.
 	 * @throws WP_SQLite_Turso_Exception When the execution or transport fails.
 	 */
 	public function query( string $sql, array $params = array() ): array {
@@ -93,8 +93,8 @@ trait WP_SQLite_Turso_Protocol {
 	/**
 	 * Execute a batch of SQL statements atomically. See the transport interface.
 	 *
-	 * @param  array<int, array{0: string, 1?: array}> $statements The statements to execute.
-	 * @return array[] One result per statement.
+	 * @param  SqliteBatch $statements The statements to execute.
+	 * @return list<RemoteResult>      One result per statement.
 	 * @throws WP_SQLite_Turso_Exception When the execution of any statement fails.
 	 */
 	public function batch( array $statements ): array {
@@ -182,8 +182,8 @@ trait WP_SQLite_Turso_Protocol {
 	/**
 	 * Execute a list of pipeline requests and return their raw results.
 	 *
-	 * @param  array $requests The pipeline requests.
-	 * @return array[]         The raw "result" objects, in order.
+	 * @param  list<array<string, mixed>> $requests The pipeline requests.
+	 * @return list<array<string, mixed>>           The raw "result" objects, in order.
 	 * @throws WP_SQLite_Turso_Exception When the request or any statement fails.
 	 */
 	private function pipeline( array $requests ): array {
@@ -203,9 +203,9 @@ trait WP_SQLite_Turso_Protocol {
 	/**
 	 * Build an "execute" pipeline request.
 	 *
-	 * @param  string $sql    The SQL statement.
-	 * @param  array  $params Positional query parameters.
-	 * @return array          The request.
+	 * @param  string       $sql    The SQL statement.
+	 * @param  SqliteParams $params Positional query parameters.
+	 * @return array<string, mixed>  The request.
 	 */
 	private function execute_request( string $sql, array $params = array() ): array {
 		return array(
@@ -217,9 +217,9 @@ trait WP_SQLite_Turso_Protocol {
 	/**
 	 * Build a protocol "stmt" object.
 	 *
-	 * @param  string $sql    The SQL statement.
-	 * @param  array  $params Positional query parameters.
-	 * @return array          The statement object.
+	 * @param  string       $sql    The SQL statement.
+	 * @param  SqliteParams $params Positional query parameters.
+	 * @return array<string, mixed>  The statement object.
 	 */
 	private function stmt( string $sql, array $params = array() ): array {
 		$stmt = array( 'sql' => $sql );
@@ -245,10 +245,10 @@ trait WP_SQLite_Turso_Protocol {
 	/**
 	 * Pull one request's "result" object out of a pipeline response.
 	 *
-	 * @param  array  $body     The decoded response body.
-	 * @param  int    $index    The index of the request.
-	 * @param  string $expected The expected response type, "execute" or "batch".
-	 * @return array            The raw result object.
+	 * @param  array<string, mixed> $body     The decoded response body.
+	 * @param  int                  $index    The index of the request.
+	 * @param  string               $expected The expected response type, "execute" or "batch".
+	 * @return array<string, mixed>           The raw result object.
 	 * @throws WP_SQLite_Turso_Exception When the request failed or the shape is wrong.
 	 */
 	private function unwrap_result( array $body, int $index, string $expected ): array {
@@ -274,8 +274,8 @@ trait WP_SQLite_Turso_Protocol {
 	/**
 	 * POST a pipeline body and return the decoded response.
 	 *
-	 * @param  array $requests The pipeline requests.
-	 * @return array           The decoded response body.
+	 * @param  list<array<string, mixed>> $requests The pipeline requests.
+	 * @return array<string, mixed>                 The decoded response body.
 	 * @throws WP_SQLite_Turso_Exception When the request fails.
 	 */
 	private function send_pipeline( array $requests ): array {

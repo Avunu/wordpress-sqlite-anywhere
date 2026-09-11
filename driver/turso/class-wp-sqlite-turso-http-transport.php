@@ -33,7 +33,7 @@ class WP_SQLite_Turso_HTTP_Transport implements WP_SQLite_Turso_Transport_Interf
 	/**
 	 * The base URL of the Turso server, e.g. "http://127.0.0.1:8080".
 	 *
-	 * @var string
+	 * @var non-empty-string
 	 */
 	private $url;
 
@@ -61,7 +61,7 @@ class WP_SQLite_Turso_HTTP_Transport implements WP_SQLite_Turso_Transport_Interf
 	/**
 	 * The reusable cURL handle.
 	 *
-	 * @var resource|CurlHandle|null
+	 * @var CurlHandle|null
 	 */
 	private $curl;
 
@@ -71,7 +71,7 @@ class WP_SQLite_Turso_HTTP_Transport implements WP_SQLite_Turso_Transport_Interf
 	 * @param string      $url     The base URL of the Turso server. A
 	 *                             "libsql://" scheme is rewritten to HTTPS.
 	 * @param string|null $token   Optional. A bearer token.
-	 * @param array       $options {
+	 * @param array<string, mixed> $options {
 	 *     Optional. An array of options.
 	 *
 	 *     @type int    $timeout_ms         The request timeout, in milliseconds.
@@ -80,7 +80,11 @@ class WP_SQLite_Turso_HTTP_Transport implements WP_SQLite_Turso_Transport_Interf
 	 * }
 	 */
 	public function __construct( string $url, ?string $token = null, array $options = array() ) {
-		$this->url                = self::normalize_url( $url );
+		$url = self::normalize_url( $url );
+		if ( '' === $url ) {
+			throw new InvalidArgumentException( 'The Turso database URL must not be empty.' );
+		}
+		$this->url                = $url;
 		$this->token              = $token;
 		$this->timeout_ms         = (int) ( $options['timeout_ms'] ?? self::DEFAULT_TIMEOUT_MS );
 		$this->connect_timeout_ms = (int) ( $options['connect_timeout_ms'] ?? self::DEFAULT_CONNECT_TIMEOUT_MS );
@@ -101,9 +105,9 @@ class WP_SQLite_Turso_HTTP_Transport implements WP_SQLite_Turso_Transport_Interf
 	public static function normalize_url( string $url ): string {
 		$url = trim( $url );
 		if ( 1 === preg_match( '#^(?:libsql|turso|wss)://#i', $url ) ) {
-			$url = preg_replace( '#^[a-z]+://#i', 'https://', $url );
+			$url = (string) preg_replace( '#^[a-z]+://#i', 'https://', $url );
 		} elseif ( 1 === preg_match( '#^ws://#i', $url ) ) {
-			$url = preg_replace( '#^ws://#i', 'http://', $url );
+			$url = (string) preg_replace( '#^ws://#i', 'http://', $url );
 		} elseif ( 1 !== preg_match( '#^https?://#i', $url ) ) {
 			$url = 'https://' . $url;
 		}
@@ -169,16 +173,21 @@ class WP_SQLite_Turso_HTTP_Transport implements WP_SQLite_Turso_Transport_Interf
 	/**
 	 * Get the reusable cURL handle, creating it when needed.
 	 *
-	 * @return resource|CurlHandle The cURL handle.
+	 * @return CurlHandle The cURL handle.
+	 * @throws WP_SQLite_Turso_Exception When cURL cannot allocate a handle.
 	 */
-	private function get_curl_handle() {
+	private function get_curl_handle(): CurlHandle {
 		if ( null === $this->curl ) {
-			$this->curl = curl_init();
+			$curl = curl_init();
+			if ( false === $curl ) {
+				throw WP_SQLite_Turso_Exception::from_transport_failure( 'cURL could not be initialised.' );
+			}
+			$this->curl = $curl;
 			curl_setopt( $this->curl, CURLOPT_RETURNTRANSFER, true );
 			curl_setopt( $this->curl, CURLOPT_TIMEOUT_MS, $this->timeout_ms );
 			curl_setopt( $this->curl, CURLOPT_CONNECTTIMEOUT_MS, $this->connect_timeout_ms );
 			curl_setopt( $this->curl, CURLOPT_TCP_KEEPALIVE, 1 );
-			curl_setopt( $this->curl, CURLOPT_TCP_NODELAY, 1 );
+			curl_setopt( $this->curl, CURLOPT_TCP_NODELAY, true );
 		}
 		return $this->curl;
 	}

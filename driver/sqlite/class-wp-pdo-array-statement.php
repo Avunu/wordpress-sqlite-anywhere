@@ -54,7 +54,7 @@ class WP_PDO_Array_Statement extends PDOStatement {
 	 * The values preserve their original types. Stringification is
 	 * applied only when the values are fetched.
 	 *
-	 * @var array[]
+	 * @var list<array<int|string, SqliteValue>>
 	 */
 	private $rows;
 
@@ -78,7 +78,7 @@ class WP_PDO_Array_Statement extends PDOStatement {
 	 * Each item is an array as per PDOStatement::getColumnMeta() and is
 	 * merged over the metadata derived from the column names and values.
 	 *
-	 * @var array[]
+	 * @var array<int, array<string, mixed>>
 	 */
 	private $column_meta;
 
@@ -92,7 +92,7 @@ class WP_PDO_Array_Statement extends PDOStatement {
 	/**
 	 * Additional arguments for the current default fetch mode.
 	 *
-	 * @var array
+	 * @var array<int|string, mixed>
 	 */
 	private $default_fetch_args = array();
 
@@ -117,11 +117,13 @@ class WP_PDO_Array_Statement extends PDOStatement {
 	 * Constructor.
 	 *
 	 * @param string[] $columns           The column names, in order. Duplicates are allowed.
-	 * @param array[]  $rows              The rows of the result set. Values can be indexed
+	 * @param list<array<int|string, SqliteValue>> $rows
+	 *                                    The rows of the result set. Values can be indexed
 	 *                                    positionally or by column names (in the column order).
 	 * @param int      $affected_rows     The number of affected rows reported by rowCount().
 	 * @param bool     $stringify_fetches Whether to stringify fetched values.
-	 * @param array[]  $column_meta       Optional column metadata overrides, indexed by column
+	 * @param array<int, array<string, mixed>> $column_meta
+	 *                                    Optional column metadata overrides, indexed by column
 	 *                                    position, as per PDOStatement::getColumnMeta().
 	 * @param int      $default_fetch_mode The initial default fetch mode.
 	 */
@@ -227,9 +229,9 @@ class WP_PDO_Array_Statement extends PDOStatement {
 	/**
 	 * Fetch the next row as an object.
 	 *
-	 * @param  string $class           The name of the class to instantiate.
-	 * @param  array  $constructorArgs The parameters to pass to the class constructor.
-	 * @return object|false            The next row as an object; false if there are no more rows.
+	 * @param  string      $class           The name of the class to instantiate.
+	 * @param  list<mixed> $constructorArgs The parameters to pass to the class constructor.
+	 * @return object|false                 The next row as an object; false if there are no more rows.
 	 */
 	#[ReturnTypeWillChange]
 	public function fetchObject( $class = 'stdClass', $constructorArgs = array() ) {
@@ -249,9 +251,9 @@ class WP_PDO_Array_Statement extends PDOStatement {
 	 * exposes the PHP type of the original column value ("integer", "double",
 	 * "string", or "null"), independently of the value stringification.
 	 *
-	 * @param  int         $column The index of the column (0-indexed).
-	 * @return array|false         The column metadata as an associative array,
-	 *                             or false if the column does not exist.
+	 * @param  int                        $column The index of the column (0-indexed).
+	 * @return array<string, mixed>|false         The column metadata as an associative array,
+	 *                                            or false if the column does not exist.
 	 */
 	#[ReturnTypeWillChange]
 	public function getColumnMeta( $column ) {
@@ -310,7 +312,7 @@ class WP_PDO_Array_Statement extends PDOStatement {
 	/**
 	 * Fetch error information associated with the last statement operation.
 	 *
-	 * @return array The array consists of at least the following fields:
+	 * @return array{0: string, 1: int|null, 2: string|null} The array consists of the following fields:
 	 *                 0: SQLSTATE error code (as defined by the ANSI SQL standard).
 	 *                 1: Driver-specific error code.
 	 *                 2: Driver-specific error message.
@@ -475,7 +477,7 @@ class WP_PDO_Array_Statement extends PDOStatement {
 	 *
 	 * @param  int   $mode The fetch mode to use.
 	 * @param  mixed $args Additional parameters for the fetch mode.
-	 * @return array       The result set as an array of rows.
+	 * @return array<int|string, mixed> The result set as an array of rows.
 	 */
 	public function fetchAll( $mode = PDO::FETCH_DEFAULT, ...$args ): array {
 		if ( null === $mode || PDO::FETCH_DEFAULT === $mode ) {
@@ -524,9 +526,9 @@ class WP_PDO_Array_Statement extends PDOStatement {
 	/**
 	 * Format a raw positional row according to a fetch mode.
 	 *
-	 * @param  array $row  The raw positional row values.
-	 * @param  int   $mode The fetch mode to use.
-	 * @param  array $args Additional parameters for the fetch mode.
+	 * @param  array<int|string, SqliteValue> $row  The raw positional row values.
+	 * @param  int                            $mode The fetch mode to use.
+	 * @param  array<int|string, mixed>       $args Additional parameters for the fetch mode.
 	 * @return mixed       The row data formatted according to the fetch mode.
 	 */
 	private function format_row( array $row, int $mode, array $args ) {
@@ -616,7 +618,7 @@ class WP_PDO_Array_Statement extends PDOStatement {
 	 * rejected outright, while one past the end of the row is an invalid index.
 	 *
 	 * @param  mixed      $column The column index to validate.
-	 * @param  array|null $row    The row to check the upper bound against.
+	 * @param  array<int|string, SqliteValue>|null $row The row to check the upper bound against.
 	 * @throws ValueError         When the index is not usable.
 	 */
 	private function assert_column_index( $column, ?array $row = null ): void {
@@ -632,8 +634,8 @@ class WP_PDO_Array_Statement extends PDOStatement {
 	/**
 	 * Format a raw positional row as a numeric array.
 	 *
-	 * @param  array $row The raw positional row values.
-	 * @return array      The row as a numeric array.
+	 * @param  array<int|string, SqliteValue> $row The raw positional row values.
+	 * @return array<int, mixed>                   The row as a numeric array.
 	 */
 	private function format_row_num( array $row ): array {
 		$values = array();
@@ -649,8 +651,8 @@ class WP_PDO_Array_Statement extends PDOStatement {
 	 * For duplicate column names, the value of the last column wins.
 	 * This matches the PDO::FETCH_ASSOC behavior.
 	 *
-	 * @param  array $row The raw positional row values.
-	 * @return array      The row as an associative array.
+	 * @param  array<int|string, SqliteValue> $row The raw positional row values.
+	 * @return array<string, mixed>                The row as an associative array.
 	 */
 	private function format_row_assoc( array $row ): array {
 		$values = array();
@@ -666,16 +668,20 @@ class WP_PDO_Array_Statement extends PDOStatement {
 	 * Following the PDO behavior, the column values are assigned to the object
 	 * properties first, and the constructor is called afterwards.
 	 *
-	 * @param  string $class            The name of the class to instantiate.
-	 * @param  array  $constructor_args The parameters to pass to the class constructor.
-	 * @param  array  $row              The raw positional row values.
+	 * @param  string                         $class            The name of the class to instantiate.
+	 * @param  list<mixed>                    $constructor_args The parameters to pass to the class constructor.
+	 * @param  array<int|string, SqliteValue> $row              The raw positional row values.
 	 * @return object                   The created object.
+	 * @throws ReflectionException      When the class does not exist.
 	 */
 	private function create_object( string $class, array $constructor_args, array $row ) {
 		if ( 'stdClass' === $class ) {
 			return (object) $this->format_row_assoc( $row );
 		}
 
+		if ( ! class_exists( $class ) ) {
+			throw new ReflectionException( sprintf( 'Class "%s" does not exist', $class ) );
+		}
 		$reflection = new ReflectionClass( $class );
 		$object     = $reflection->newInstanceWithoutConstructor();
 

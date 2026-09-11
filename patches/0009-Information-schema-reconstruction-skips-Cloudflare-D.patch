@@ -1,26 +1,19 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Kevin Shenk <kevin@avu.nu>
-Date: Fri, 11 Sep 2026 17:38:25 -0400
-Subject: [PATCH 07/14] class-wp-sqlite-information-schema-reconstructor.php:
- carry the fork's changes (phase 1, mechanical)
+Date: Fri, 11 Sep 2026 18:18:21 -0400
+Subject: [PATCH 09/11] Information schema reconstruction skips Cloudflare D1's
+ internal tables
 
+D1 keeps "_cf_METADATA" and "_cf_KV" in the database; they are not WordPress
+tables and must not be reconstructed as such.
 ---
- .../class-wp-sqlite-information-schema-reconstructor.php     | 5 ++++-
- 1 file changed, 4 insertions(+), 1 deletion(-)
+ .../class-wp-sqlite-information-schema-reconstructor.php       | 3 +++
+ 1 file changed, 3 insertions(+)
 
 diff --git a/packages/mysql-on-sqlite/src/sqlite/class-wp-sqlite-information-schema-reconstructor.php b/packages/mysql-on-sqlite/src/sqlite/class-wp-sqlite-information-schema-reconstructor.php
-index e1d905a..78b6127 100644
+index da05636..78b6127 100644
 --- a/packages/mysql-on-sqlite/src/sqlite/class-wp-sqlite-information-schema-reconstructor.php
 +++ b/packages/mysql-on-sqlite/src/sqlite/class-wp-sqlite-information-schema-reconstructor.php
-@@ -28,7 +28,7 @@ class WP_SQLite_Information_Schema_Reconstructor {
- 	/**
- 	 * An instance of the SQLite connection.
- 	 *
--	 * @var WP_SQLite_Connection
-+	 * @var WP_SQLite_Connection_Interface
- 	 */
- 	private $connection;
- 
 @@ -135,12 +135,15 @@ class WP_SQLite_Information_Schema_Reconstructor {
  				AND name != ?
  				AND name NOT LIKE ? ESCAPE '\'

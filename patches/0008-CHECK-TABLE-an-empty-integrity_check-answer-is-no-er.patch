@@ -1,0 +1,31 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Kevin Shenk <kevin@avu.nu>
+Date: Fri, 11 Sep 2026 18:18:20 -0400
+Subject: [PATCH 08/11] CHECK TABLE: an empty integrity_check answer is no
+ errors
+
+A connection that cannot run PRAGMA integrity_check answers with no rows;
+indexing into that was an undefined offset.
+---
+ .../src/sqlite/class-wp-mysql-on-sqlite.php               | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php b/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php
+index 149280a..0dba573 100644
+--- a/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php
++++ b/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php
+@@ -4228,7 +4228,13 @@ class WP_MySQL_On_SQLite extends PDO {
+ 							sprintf( 'PRAGMA integrity_check(%s)', $quoted_table_name )
+ 						);
+ 						$errors = $stmt->fetchAll( PDO::FETCH_COLUMN );
+-						if ( 'ok' === $errors[0] ) {
++						/*
++						 * A healthy table answers with the single row "ok", which is
++						 * a status rather than an error. A connection that cannot run
++						 * the pragma at all answers with nothing, which is likewise
++						 * no errors to report -- and must not be indexed into.
++						 */
++						if ( array() !== $errors && 'ok' === $errors[0] ) {
+ 							array_shift( $errors );
+ 						}
+ 						break;

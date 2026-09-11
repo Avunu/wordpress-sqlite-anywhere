@@ -17,28 +17,18 @@ require_once __DIR__ . '/class-wp-sqlite-turso-http-transport.php';
 require_once __DIR__ . '/class-wp-sqlite-turso-connection.php';
 require_once __DIR__ . '/class-wp-sqlite-turso-replica-connection.php';
 
-/*
- * The Turso transport has an optional native (e.g. Rust) client providing an
- * HTTP connection pool that persists across PHP requests. When the extension is
- * loaded it pre-declares WP_SQLite_Turso_Native_Client, and the native
- * transport is preferred over the pure-PHP cURL one.
- */
-if ( class_exists( 'WP_SQLite_Turso_Native_Client', false ) ) {
-	require_once __DIR__ . '/class-wp-sqlite-turso-native-transport.php';
-}
-
 /**
- * Create the best available Turso transport.
+ * Create the Turso transport.
  *
- * @param  string      $url     The base URL of the Turso database.
- * @param  string|null $token   Optional. A bearer token.
- * @param  array       $options Optional. Transport options.
+ * Only the pure-PHP cURL transport exists today; the D1 backend's native
+ * client shows what a pooled alternative would look like.
+ *
+ * @param  string               $url     The base URL of the Turso database.
+ * @param  string|null          $token   Optional. A bearer token.
+ * @param  array<string, mixed> $options Optional. Transport options.
  * @return WP_SQLite_Turso_Transport_Interface The transport.
  */
 function wp_sqlite_turso_create_transport( string $url, ?string $token = null, array $options = array() ): WP_SQLite_Turso_Transport_Interface {
-	if ( class_exists( 'WP_SQLite_Turso_Native_Transport', false ) ) {
-		return new WP_SQLite_Turso_Native_Transport( $url, $token, $options );
-	}
 	return new WP_SQLite_Turso_HTTP_Transport( $url, $token, $options );
 }
 
@@ -52,7 +42,7 @@ function wp_sqlite_turso_create_transport( string $url, ?string $token = null, a
  * @param  string      $url           The base URL of the Turso database.
  * @param  string|null $token         Optional. A bearer token.
  * @param  string|null $snapshot_path Optional. Path to a published snapshot.
- * @param  array       $options       Optional. Transport and connection options.
+ * @param  array<string, mixed> $options Optional. Transport and connection options.
  * @return WP_SQLite_Connection_Interface The connection.
  */
 function wp_sqlite_turso_create_connection(

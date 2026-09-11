@@ -1,0 +1,25 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Kevin Shenk <kevin@avu.nu>
+Date: Fri, 11 Sep 2026 18:18:18 -0400
+Subject: [PATCH 01/11] load.php: load the connection interface and its
+ companions
+
+The overlay's "sqlite/load-connection-interface.php" pulls in the connection
+interface, the trait that implements it for the PDO connection, the in-memory
+statement, and the UDF-free translator, ahead of the classes that use them.
+---
+ packages/mysql-on-sqlite/src/load.php | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/packages/mysql-on-sqlite/src/load.php b/packages/mysql-on-sqlite/src/load.php
+index cf3be9b..708add4 100644
+--- a/packages/mysql-on-sqlite/src/load.php
++++ b/packages/mysql-on-sqlite/src/load.php
+@@ -37,6 +37,7 @@ if ( class_exists( 'WP_MySQL_Native_Parser', false ) ) {
+ } else {
+ 	require_once __DIR__ . '/mysql/class-wp-mysql-parser.php';
+ }
++require_once __DIR__ . '/sqlite/load-connection-interface.php';
+ require_once __DIR__ . '/sqlite/class-wp-sqlite-connection.php';
+ require_once __DIR__ . '/sqlite/class-wp-sqlite-configurator.php';
+ require_once __DIR__ . '/sqlite/class-wp-sqlite-driver.php';
