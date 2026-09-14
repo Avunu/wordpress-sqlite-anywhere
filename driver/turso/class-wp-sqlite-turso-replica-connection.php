@@ -32,6 +32,16 @@
  * A transaction latches as well as a write, because a transaction spanning a
  * snapshot read and a remote write could not be atomic across both.
  *
+ * With an embedded replica (WP_SQLite_Turso_Embedded_Reader) a write does not
+ * latch: the replica can be brought up to date on demand, so the write goes to
+ * the primary and the replica *pulls* before the next read, which then sees
+ * the write and is served locally. One pull costs about one primary round
+ * trip, so a request is never worse off than latching and usually far better
+ * -- plugins that write a session row or bump an option on every page view
+ * would otherwise send the whole rest of the request over the WAN. Should a
+ * pull fail, the connection latches after all, so read-your-writes never
+ * depends on a replica that could not catch up. Transactions still latch.
+ *
  * Capabilities are reported as the *primary's*, not the snapshot's, because any
  * transactional work happens there. That is conservative: it means the driver
  * emits the same UDF-less SQL on both paths, so a query does not change shape
@@ -77,6 +87,15 @@ class WP_SQLite_Turso_Replica_Connection implements WP_SQLite_Connection_Interfa
 	private $latched = false;
 
 	/**
+	 * Whether the embedded replica must pull before the next read.
+	 *
+	 * Set by a write that did not latch; cleared by the pull.
+	 *
+	 * @var bool
+	 */
+	private $pull_pending = false;
+
+	/**
 	 * A query logger callback.
 	 *
 	 * @var SqliteQueryLogger|null
@@ -86,11 +105,12 @@ class WP_SQLite_Turso_Replica_Connection implements WP_SQLite_Connection_Interfa
 	/**
 	 * Per-route statement counts, for diagnostics.
 	 *
-	 * @var array{snapshot: int, primary: int, latched_at: int|null}
+	 * @var array{snapshot: int, primary: int, pulls: int, latched_at: int|null}
 	 */
 	private $counters = array(
 		'snapshot'   => 0,
 		'primary'    => 0,
+		'pulls'      => 0,
 		'latched_at' => null,
 	);
 
@@ -119,7 +139,7 @@ class WP_SQLite_Turso_Replica_Connection implements WP_SQLite_Connection_Interfa
 	/**
 	 * Get the per-route statement counters.
 	 *
-	 * @return array{snapshot: int, primary: int, latched_at: int|null}
+	 * @return array{snapshot: int, primary: int, pulls: int, latched_at: int|null}
 	 */
 	public function get_counters(): array {
 		return $this->counters;
@@ -138,11 +158,56 @@ class WP_SQLite_Turso_Replica_Connection implements WP_SQLite_Connection_Interfa
 		}
 
 		if ( self::is_read_only( $sql ) ) {
+			$this->catch_up();
+			if ( $this->latched ) {
+				++$this->counters['primary'];
+				return $this->primary;
+			}
 			++$this->counters['snapshot'];
 			return $this->reader;
 		}
 
-		return $this->latch();
+		return $this->write();
+	}
+
+	/**
+	 * Route a write to the primary.
+	 *
+	 * An embedded replica pulls before the next read instead of latching; a
+	 * published snapshot cannot be refreshed on demand, so it latches.
+	 *
+	 * @return WP_SQLite_Turso_Connection The primary.
+	 */
+	private function write(): WP_SQLite_Turso_Connection {
+		if ( ! $this->reader instanceof WP_SQLite_Turso_Embedded_Reader ) {
+			return $this->latch();
+		}
+		$this->pull_pending = true;
+		// So the next request to this process reads what this one wrote, even
+		// when this request never reads again after its last write.
+		$this->reader->sync_after_write();
+		++$this->counters['primary'];
+		return $this->primary;
+	}
+
+	/**
+	 * Bring the embedded replica up to date after a write, before a read.
+	 *
+	 * Latches when the pull fails: a read must never miss this request's own
+	 * writes, and the primary always has them.
+	 */
+	private function catch_up(): void {
+		if ( ! $this->pull_pending || ! $this->reader instanceof WP_SQLite_Turso_Embedded_Reader ) {
+			return;
+		}
+		$this->pull_pending = false;
+		try {
+			$this->reader->get_replica()->pull();
+			++$this->counters['pulls'];
+		} catch ( Exception $e ) {
+			unset( $e );
+			$this->mark_latched();
+		}
 	}
 
 	/**
@@ -151,17 +216,25 @@ class WP_SQLite_Turso_Replica_Connection implements WP_SQLite_Connection_Interfa
 	 * @return WP_SQLite_Turso_Connection The primary.
 	 */
 	private function latch(): WP_SQLite_Turso_Connection {
-		if ( ! $this->latched ) {
-			$this->latched                = true;
-			$this->counters['latched_at'] = $this->counters['snapshot'] + $this->counters['primary'];
-			// An embedded replica can be brought up to date before the request
-			// ends, so the next request reads what this one wrote.
-			if ( $this->reader instanceof WP_SQLite_Turso_Embedded_Reader ) {
-				$this->reader->sync_after_write();
-			}
-		}
+		$this->mark_latched();
 		++$this->counters['primary'];
 		return $this->primary;
+	}
+
+	/**
+	 * Record that this request now reads and writes on the primary only.
+	 */
+	private function mark_latched(): void {
+		if ( $this->latched ) {
+			return;
+		}
+		$this->latched                = true;
+		$this->counters['latched_at'] = $this->counters['snapshot'] + $this->counters['primary'];
+		// An embedded replica can be brought up to date before the request
+		// ends, so the next request reads what this one wrote.
+		if ( $this->reader instanceof WP_SQLite_Turso_Embedded_Reader ) {
+			$this->reader->sync_after_write();
+		}
 	}
 
 	/**
@@ -195,14 +268,14 @@ class WP_SQLite_Turso_Replica_Connection implements WP_SQLite_Connection_Interfa
 	/**
 	 * Execute a batch of queries atomically on the primary.
 	 *
-	 * A batch is a write by definition, so it latches.
+	 * A batch is a write by definition, so it is routed as one.
 	 *
 	 * @param  SqliteBatch $statements The queries.
 	 * @throws PDOException   When the execution of any query fails.
 	 * @return list<PDOStatement> The PDO statement objects, one for each query.
 	 */
 	public function execute_batch( array $statements ): array {
-		return $this->latch()->execute_batch( $statements );
+		return $this->write()->execute_batch( $statements );
 	}
 
 	/**

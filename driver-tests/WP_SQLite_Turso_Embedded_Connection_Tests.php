@@ -90,7 +90,7 @@ class WP_SQLite_Turso_Embedded_Connection_Tests extends WP_SQLite_Connection_Con
 		return $reader;
 	}
 
-	public function test_reads_come_from_the_replica_until_a_write(): void {
+	public function test_reads_come_from_the_replica_and_a_write_does_not_latch(): void {
 		$connection = $this->create_connection();
 		$connection->query( 'SELECT 1' );
 		$connection->query( 'PRAGMA user_version' );
@@ -98,11 +98,58 @@ class WP_SQLite_Turso_Embedded_Connection_Tests extends WP_SQLite_Connection_Con
 		$this->assertSame( 2, $connection->get_counters()['snapshot'] );
 		$this->assertSame( 0, $connection->get_counters()['primary'] );
 
+		// The write goes to the primary; the connection stays unlatched.
 		$connection->query( 'CREATE TABLE t ( id INTEGER PRIMARY KEY, name TEXT )' );
-		$this->assertTrue( $connection->is_latched() );
+		$this->assertFalse( $connection->is_latched() );
+		$this->assertSame( 1, $connection->get_counters()['primary'] );
+		$this->assertSame( 0, $connection->get_counters()['pulls'] );
+
+		// The next read pulls the replica once, then reads from it.
 		$connection->query( 'SELECT 1' );
-		$this->assertSame( 2, $connection->get_counters()['snapshot'] );
+		$connection->query( 'SELECT 2' );
+		$this->assertFalse( $connection->is_latched() );
+		$this->assertSame( 4, $connection->get_counters()['snapshot'] );
+		$this->assertSame( 1, $connection->get_counters()['primary'] );
+		$this->assertSame( 1, $connection->get_counters()['pulls'] );
+	}
+
+	public function test_a_read_after_a_write_sees_it_through_the_replica(): void {
+		$connection = $this->create_connection();
+		$connection->query( 'CREATE TABLE t ( id INTEGER PRIMARY KEY, name TEXT )' );
+		$connection->query( 'INSERT INTO t (name) VALUES (?)', array( 'Alice' ) );
+		$this->assertSame( '1', $connection->query( 'SELECT COUNT(*) FROM t' )->fetchColumn() );
+		$this->assertSame( 'Alice', $connection->query( 'SELECT name FROM t' )->fetchColumn() );
+		$this->assertFalse( $connection->is_latched() );
 		$this->assertSame( 2, $connection->get_counters()['primary'] );
+		$this->assertSame( 2, $connection->get_counters()['snapshot'] );
+		$this->assertSame( 1, $connection->get_counters()['pulls'], 'Two consecutive writes cost one pull.' );
+
+		// Write, read, write, read: a pull per read that follows a write.
+		$connection->query( 'INSERT INTO t (name) VALUES (?)', array( 'Bob' ) );
+		$this->assertSame( '2', $connection->query( 'SELECT COUNT(*) FROM t' )->fetchColumn() );
+		$connection->execute_batch(
+			array(
+				array( 'INSERT INTO t (name) VALUES (?)', array( 'Carol' ) ),
+				array( 'INSERT INTO t (name) VALUES (?)', array( 'Dave' ) ),
+			)
+		);
+		$this->assertSame( '4', $connection->query( 'SELECT COUNT(*) FROM t' )->fetchColumn() );
+		$this->assertSame( 3, $connection->get_counters()['pulls'] );
+		$this->assertFalse( $connection->is_latched() );
+	}
+
+	public function test_a_transaction_still_latches(): void {
+		$connection = $this->create_connection();
+		$connection->query( 'CREATE TABLE t ( id INTEGER PRIMARY KEY, name TEXT )' );
+		$connection->begin_transaction();
+		$this->assertTrue( $connection->is_latched() );
+		$connection->query( 'INSERT INTO t (name) VALUES (?)', array( 'Alice' ) );
+		$connection->commit();
+		$connection->query( 'SELECT COUNT(*) FROM t' );
+		$this->assertTrue( $connection->is_latched(), 'Latched for the rest of the request.' );
+		// CREATE, BEGIN, INSERT, COMMIT, SELECT: all on the primary.
+		$this->assertSame( 5, $connection->get_counters()['primary'] );
+		$this->assertSame( 0, $connection->get_counters()['pulls'] );
 	}
 
 	public function test_a_write_becomes_visible_to_the_replica_after_a_pull(): void {
@@ -179,6 +226,9 @@ class WP_SQLite_Turso_Embedded_Connection_Tests extends WP_SQLite_Connection_Con
 		$driver->setAttribute( PDO::ATTR_STRINGIFY_FETCHES, true );
 		$driver->exec( 'CREATE TABLE posts ( id INT AUTO_INCREMENT PRIMARY KEY, title VARCHAR(255) )' );
 		$driver->exec( "INSERT INTO posts (title) VALUES ('Hello')" );
+		// A fresh database: the configurator set it up inside an EXCLUSIVE
+		// transaction, and a transaction latches. That happens once per
+		// database (and per driver upgrade), never on an ordinary request.
 		$this->assertTrue( $connection->is_latched() );
 		$this->reader( $connection )->get_replica()->pull();
 
@@ -207,6 +257,14 @@ class WP_SQLite_Turso_Embedded_Connection_Tests extends WP_SQLite_Connection_Con
 		);
 		$this->assertFalse( $connection->is_latched(), 'A plain SELECT through the driver stays on the replica.' );
 		$this->assertGreaterThan( 0, $connection->get_counters()['snapshot'] );
+
+		// A write on a configured database does not latch: the driver's own
+		// read-backs and the next query pull the replica instead.
+		$driver->exec( "INSERT INTO posts (title) VALUES ('World')" );
+		$this->assertSame( '2', $driver->lastInsertId() );
+		$this->assertSame( '2', $driver->query( 'SELECT COUNT(*) FROM posts' )->fetchColumn() );
+		$this->assertFalse( $connection->is_latched(), 'A write through the driver does not latch on an embedded replica.' );
+		$this->assertGreaterThan( 0, $connection->get_counters()['pulls'] );
 
 		$driver->exec( 'DROP TABLE posts' );
 	}
