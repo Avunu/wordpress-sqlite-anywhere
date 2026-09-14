@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/Avunu/wordpress-sqlite-anywhere/compare/v1.0.0...v1.1.0) (2026-09-14)
+
+
+### Features
+
+* **turso:** a native extension with a pooled client and an embedded replica ([1a74845](https://github.com/Avunu/wordpress-sqlite-anywhere/commit/1a748458dfa1bf3fb137432dc9b986b6da82bdfc))
+
 ## 1.0.0 (2026-09-11)
 
 
