@@ -14,10 +14,13 @@
   rustPkgs ? pkgs,
 }:
 let
+  crateDir = "${src}/packages/turso-snapshot-publisher";
   # Only the crate directory: a source hash that depends on the whole flake
-  # would rebuild the crate on every unrelated commit.
+  # would rebuild the crate on every unrelated commit. The lock file is read
+  # from the original path: the narrowed copy exists only once it is built,
+  # and `nix flake check` reads the lock before then.
   crate = builtins.path {
-    path = "${src}/packages/turso-snapshot-publisher";
+    path = crateDir;
     name = "turso-snapshot-publisher-src";
   };
 in
@@ -27,7 +30,7 @@ rustPkgs.rustPlatform.buildRustPackage {
 
   src = crate;
 
-  cargoLock.lockFile = "${crate}/Cargo.lock";
+  cargoLock.lockFile = "${crateDir}/Cargo.lock";
 
   # turso_core pulls in ring through hyper-rustls.
   nativeBuildInputs = with rustPkgs; [ pkg-config ];

@@ -30,6 +30,7 @@ jobs:
           - driver-pdo
           - driver-d1
           - driver-turso
+          - turso-embedded
           - publisher
           - d1-client
           - pre-commit

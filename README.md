@@ -74,12 +74,21 @@ define('WP_TURSO_PIPELINE_PATH', '/v2/pipeline');
 define('WP_TURSO_TRANSACTION_FALLBACK', 'warn');   // "warn", "error" or "ignore"
 ```
 
-Two shapes, chosen by whether a snapshot is configured:
+```php
+define('WP_TURSO_REPLICA', '/var/lib/wordpress/turso/replica.db');   // embedded replica; needs the wp_turso extension
+define('WP_TURSO_REPLICA_PULL_MS', 1000);
+define('WP_TURSO_REPLICA_OPEN_TIMEOUT_MS', 60000);
+```
 
--   **Without `WP_TURSO_SNAPSHOT`**, every statement goes to the primary over Turso's SQL-over-HTTP API. This is the control plane — wp-admin, cron, deployment tooling — which must read its own writes immediately.
--   **With `WP_TURSO_SNAPSHOT`**, reads come from that local SQLite file and writes go to the primary; the first write latches the rest of the request to the primary so it reads its own writes. This is the public front end: a page render never touches the network.
+Three shapes, chosen by what is configured:
 
-The snapshot is published by [`turso-snapshot-publisher`](packages/turso-snapshot-publisher/), a small Rust daemon that keeps a private embedded replica and periodically hands over a consistent standalone copy (`pull → VACUUM INTO → rename`). PHP cannot read a live Turso replica — Turso holds an exclusive lock on it and coordinates its WAL through a file SQLite does not know about — which is why the copy exists. The front end is stale by at most one publish interval.
+-   **Neither `WP_TURSO_REPLICA` nor `WP_TURSO_SNAPSHOT`**: every statement goes to the primary over Turso's SQL-over-HTTP API. Correct anywhere; fast only when the primary is co-located, because every statement is a round trip.
+-   **`WP_TURSO_REPLICA`**: the [`wp_turso`](packages/php-ext-wp-turso/) PHP extension holds an embedded replica open in the PHP process and pulls the primary's changes into it every `WP_TURSO_REPLICA_PULL_MS`. Reads come from the replica at local-SQLite speed; writes go to the primary, and the first write latches the rest of the request to the primary so it reads its own writes. A request that wrote also pulls the replica up to date before it ends, so the next request — the redirect after a save, the dashboard after a login — finds what was written. No publisher, no snapshot copy, and it works for wp-admin too: on a WAN primary the dashboard went from 1.5 s to 40 ms. One process owns the replica file (an exclusive lock), so this is for FrankenPHP's one-process-many-threads model, not a pool of PHP-FPM workers; a fleet of front ends behind one balancer each keep their own replica.
+-   **`WP_TURSO_SNAPSHOT`**: reads come from a standalone SQLite file that [`turso-snapshot-publisher`](packages/turso-snapshot-publisher/) publishes (`pull → VACUUM INTO → rename`) from a private replica, writes go to the primary with the same latch. The pure-PHP option where the extension cannot be loaded; the front end is stale by at most one publish interval and the admin plane must stay on the primary.
+
+Either way PHP never reads a *live* Turso replica through `pdo_sqlite`: Turso holds an exclusive lock on it and coordinates its WAL through a file SQLite does not know about. The extension reads it from inside the process that owns it; the publisher hands over a copy.
+
+With the extension loaded, requests to the primary also go through its pooled HTTP client instead of cURL, which keeps connections (and their TLS handshakes) alive across PHP requests — on a WAN primary that is worth ~150 ms per page.
 
 ### Cloudflare D1
 
@@ -108,7 +117,8 @@ driver/           our additive driver code, overlaid onto upstream's driver sour
 driver-tests/     our additive driver tests + tooling, overlaid onto upstream's test tree
 plugin/           our additions to upstream's plugin directory
 src/              SqliteAnywhere\ — the drop-in's engine selection (house style, PHPStan level 8)
-packages/         turso-snapshot-publisher (Rust), d1-proxy-worker (TypeScript), php-ext-wp-d1-client (Rust)
+packages/         php-ext-wp-turso (Rust: pooled client + embedded replica), turso-snapshot-publisher (Rust),
+                  d1-proxy-worker (TypeScript), php-ext-wp-d1-client (Rust)
 bin/assemble.sh   upstream + patches + overlays → build/ (no git, no PHP: it runs inside the Nix sandbox)
 ```
 
@@ -143,7 +153,7 @@ WP_SQLITE_TEST_BACKEND=d1    ../../../driver-tests/tools-project/vendor/bin/phpu
 WP_SQLITE_TEST_BACKEND=turso ../../../driver-tests/tools-project/vendor/bin/phpunit --testsuite remote
 ```
 
-Every check also exists as a flake check, which is what CI runs: `nix build .#checks.x86_64-linux.<name> -L` for `assembled`, `plugin-header`, `phpstan`, `phpcs`, `phpcs-driver`, `phpunit`, `driver-pdo`, `driver-d1`, `driver-turso`, `publisher`, `d1-client` and `pre-commit`; the D1 proxy worker's vitest suite runs on a plain Node runner (its pool needs workerd). `nix flake check` runs the sandbox-safe subset; the pre-push git hooks run PHPStan, PHPCS and the Nix linters locally — push from `nix develop` so they find their tools.
+Every check also exists as a flake check, which is what CI runs: `nix build .#checks.x86_64-linux.<name> -L` for `assembled`, `plugin-header`, `phpstan`, `phpcs`, `phpcs-driver`, `phpunit`, `driver-pdo`, `driver-d1`, `driver-turso`, `turso-embedded` (the extension against a local `tursodb --sync-server`), `publisher`, `d1-client` and `pre-commit`; the D1 proxy worker's vitest suite runs on a plain Node runner (its pool needs workerd). `nix flake check` runs the sandbox-safe subset; the pre-push git hooks run PHPStan, PHPCS and the Nix linters locally — push from `nix develop` so they find their tools.
 
 `main` requires every one of those jobs to pass; Dependabot PRs auto-merge once they do. Majors of the driver suites' PHPUnit and of the worker's vitest stack are held back in `.github/dependabot.yml` (upstream's suites use PHPUnit 8/9 APIs; the worker config predates the Vitest 4 plugin form).
 

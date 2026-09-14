@@ -47,6 +47,7 @@ parameters:
     # runtime; the stub gives PHPStan its shape.
     scanFiles:
         - phpstan/wp-d1-client-stub.php
+        - phpstan/wp-turso-stub.php
     dynamicConstantNames:
         - WP_CLI
         - DB_ENGINE

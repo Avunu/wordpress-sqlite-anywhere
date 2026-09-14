@@ -204,6 +204,15 @@
           src = "${self}/packages/php-ext-wp-d1-client";
         };
 
+        # The Turso backend's native pieces: the pooled HTTP client and the
+        # embedded replica. Needs pkg-config for turso's TLS stack.
+        tursoExt = mkPhpExtension {
+          inherit pkgs php;
+          pname = "wp_turso";
+          src = "${self}/packages/php-ext-wp-turso";
+          extraNativeBuildInputs = [ pkgs.pkg-config ];
+        };
+
         # ---------------------------------------------------------------- #
         # The bundled driver's test suites, over the assembled package.     #
         # The tooling project's vendor/ is linked in as vendor/;            #
@@ -272,10 +281,10 @@
             };
             cargo-fmt = {
               enable = true;
-              name = "cargo fmt --check (both crates)";
+              name = "cargo fmt --check (all crates)";
               entry = "${pkgs.writeShellScript "cargo-fmt-check" ''
                 set -e
-                for crate in packages/turso-snapshot-publisher packages/php-ext-wp-d1-client; do
+                for crate in packages/turso-snapshot-publisher packages/php-ext-wp-d1-client packages/php-ext-wp-turso; do
                   ${pkgs.cargo}/bin/cargo fmt --manifest-path "$crate/Cargo.toml" --check
                 done
               ''}";
@@ -293,6 +302,14 @@
       {
         devShells.default = pkgs.mkShell {
           inherit (preCommitCheck) shellHook;
+          # ext-php-rs generates bindings against the PHP headers at build
+          # time, so `cargo build` in packages/php-ext-* works in the shell.
+          env = {
+            PHP_CONFIG = "${php.unwrapped.dev}/bin/php-config";
+            PHP = "${php.unwrapped}/bin/php";
+            LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
+            BINDGEN_EXTRA_CLANG_ARGS = "-I${pkgs.glibc.dev}/include -I${pkgs.libclang.lib}/lib/clang/${pkgs.lib.versions.major pkgs.libclang.version}/include";
+          };
           packages = [
             php
             php.packages.composer
@@ -304,6 +321,7 @@
             pkgs.clippy
             pkgs.rustfmt
             pkgs.pkg-config
+            pkgs.clang
             pkgs.gnupatch
             pkgs.git
             pkgs.sqlite
@@ -440,6 +458,43 @@
           });
           d1-client = d1Client;
 
+          # The wp_turso extension against a local sync server: the embedded
+          # replica's test suite, offline. tursodb listens on the loopback,
+          # which the sandbox allows. cacert: the sync engine's HTTP client
+          # loads the system roots at start-up and its I/O thread dies without
+          # them, even for a plain-HTTP loopback server.
+          turso-embedded =
+            pkgs.runCommand "check-turso-embedded"
+              {
+                nativeBuildInputs = [
+                  php
+                  pkgs.turso
+                  pkgs.iproute2
+                  pkgs.cacert
+                ];
+              }
+              ''
+                set -euo pipefail
+                cp -r ${assembled}/packages work
+                chmod -R u+w work
+                export HOME="$TMPDIR"
+
+                mkdir "$TMPDIR/server"
+                ( cd "$TMPDIR/server" && tursodb primary.db --sync-server 127.0.0.1:18089 > server.log 2>&1 ) &
+                for _ in $(seq 1 100); do
+                  ss -ltn | grep -q ':18089 ' && break
+                  sleep 0.1
+                done
+                ss -ltn | grep -q ':18089 ' || { cat "$TMPDIR/server/server.log"; exit 1; }
+
+                cd work/mysql-on-sqlite
+                ln -s ${driverTools}/vendor vendor
+                WP_SQLITE_TEST_TURSO_SYNC_URL=http://127.0.0.1:18089 \
+                  php -d extension=${tursoExt}/lib/libwp_turso.so vendor/bin/phpunit \
+                    --no-coverage --colors=never tests/WP_SQLite_Turso_Embedded_Connection_Tests.php
+                touch "$out"
+              '';
+
           # nix flake check also validates the git-hooks config (sandbox-safe hooks
           # only; the pre-push PHP hooks are skipped here).
           pre-commit = preCommitCheck;
@@ -457,6 +512,7 @@
 
           turso-snapshot-publisher = tursoPublisher;
           d1-client = d1Client;
+          turso-ext = tursoExt;
 
           # ---------------------------------------------------------------- #
           # Deterministic, ready-to-install zip (top-level wordpress-sqlite-anywhere/).
@@ -498,6 +554,19 @@
             // {
               pname = "wp_d1_client";
               src = "${self}/packages/php-ext-wp-d1-client";
+            }
+          );
+
+        # mkTursoExtension { pkgs; php; rustPkgs ? pkgs; }
+        # The Turso backend's pooled HTTP client and embedded replica.
+        mkTursoExtension =
+          args:
+          import ./nix/php-extension.nix (
+            args
+            // {
+              pname = "wp_turso";
+              src = "${self}/packages/php-ext-wp-turso";
+              extraNativeBuildInputs = [ args.pkgs.pkg-config ];
             }
           );
 

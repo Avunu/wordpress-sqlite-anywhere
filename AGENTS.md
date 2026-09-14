@@ -23,8 +23,9 @@ upstreamed, and upstream is consumed release by release.
   docblocks and PHPStan level 8.
 - `src/` (`SqliteAnywhere\`), `wordpress-sqlite-anywhere.php`, `db.copy`, `tests/` — **house style**:
   `strict_types`, `final`, typed everything, enums, PSR-12, camelCase, PHPStan level 8.
-- `packages/` — `turso-snapshot-publisher` (Rust), `d1-proxy-worker` (TypeScript), `php-ext-wp-d1-client`
-  (Rust PHP extension).
+- `packages/` — `php-ext-wp-turso` (Rust PHP extension: the Turso backend's pooled HTTP client and the embedded
+  replica, `cargo build --release` works in the dev shell), `turso-snapshot-publisher` (Rust), `d1-proxy-worker`
+  (TypeScript), `php-ext-wp-d1-client` (Rust PHP extension).
 - `bin/assemble.sh` — upstream + patches + overlays → `build/`. Coreutils and GNU `patch` only, so it
   runs inside the Nix sandbox. `vendor/` is added by the Nix package.
 
@@ -62,4 +63,8 @@ nix build .#zip                 # result/wordpress-sqlite-anywhere.zip
 - `SQLITE_DRIVER_VERSION` stays upstream's. The plugin version is independent semver.
 - Two PHPUnit majors on purpose: 12 for `src/`, 9 for upstream's suites (they use PHPUnit 8/9 APIs),
   kept in separate composer projects.
+- The Turso backend has three read shapes: primary, snapshot (publisher), embedded replica (extension). The
+  embedded reader is read-only by contract and refuses anything but reads; writes always go to the primary, and a
+  request that wrote pulls the replica before it ends (`WP_SQLite_Turso_Embedded_Reader::sync_after_write()`).
+  Never let local writes into the replica: the sync engine would push them with last-writer-wins semantics.
 - Secrets (Turso tokens, D1 proxy tokens) never go into the repo, a command line, or a test fixture.

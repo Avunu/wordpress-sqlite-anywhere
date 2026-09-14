@@ -154,6 +154,11 @@ class WP_SQLite_Turso_Replica_Connection implements WP_SQLite_Connection_Interfa
 		if ( ! $this->latched ) {
 			$this->latched                = true;
 			$this->counters['latched_at'] = $this->counters['snapshot'] + $this->counters['primary'];
+			// An embedded replica can be brought up to date before the request
+			// ends, so the next request reads what this one wrote.
+			if ( $this->reader instanceof WP_SQLite_Turso_Embedded_Reader ) {
+				$this->reader->sync_after_write();
+			}
 		}
 		++$this->counters['primary'];
 		return $this->primary;

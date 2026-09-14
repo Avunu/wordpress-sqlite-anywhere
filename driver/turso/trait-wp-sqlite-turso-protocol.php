@@ -114,14 +114,40 @@ trait WP_SQLite_Turso_Protocol {
 		}
 		$offset  = count( $steps );
 		$steps[] = array( 'stmt' => array( 'sql' => 'BEGIN' ) );
-		foreach ( array_values( $statements ) as $index => $statement ) {
-			$steps[] = array(
-				'stmt'      => $this->stmt( $statement[0], $statement[1] ?? array() ),
-				// Each step runs only if the one before it did.
+
+		/*
+		 * Each statement runs only if the one before it did. A write is
+		 * followed by a step asking for changes() and last_insert_rowid(),
+		 * as query() does: servers differ in whether they report write
+		 * metadata in batch results, and the driver's callers read it.
+		 */
+		$statement_steps = array();
+		$previous        = $offset;
+		foreach ( array_values( $statements ) as $statement ) {
+			$sql      = $statement[0];
+			$steps[]  = array(
+				'stmt'      => $this->stmt( $sql, $statement[1] ?? array() ),
 				'condition' => array(
 					'type' => 'ok',
-					'step' => $offset + $index,
+					'step' => $previous,
 				),
+			);
+			$index    = count( $steps ) - 1;
+			$previous = $index;
+			$meta     = null;
+			if ( $this->statement_changes_data( $sql ) ) {
+				$steps[] = array(
+					'stmt'      => array( 'sql' => 'SELECT changes(), last_insert_rowid()' ),
+					'condition' => array(
+						'type' => 'ok',
+						'step' => $index,
+					),
+				);
+				$meta    = count( $steps ) - 1;
+			}
+			$statement_steps[] = array(
+				'index' => $index,
+				'meta'  => $meta,
 			);
 		}
 
@@ -166,15 +192,24 @@ trait WP_SQLite_Turso_Protocol {
 		}
 
 		$results = array();
-		$first   = $offset + 1; // past the session prefix and the BEGIN
-		for ( $i = $first, $last = $offset + count( $statements ); $i <= $last; $i++ ) {
-			$step = $step_results[ $i ] ?? null;
+		foreach ( $statement_steps as $statement_step ) {
+			$step = $step_results[ $statement_step['index'] ] ?? null;
 			if ( ! is_array( $step ) ) {
 				throw WP_SQLite_Turso_Exception::from_transport_failure(
-					sprintf( 'Turso returned no result for batch statement %d.', $i )
+					sprintf( 'Turso returned no result for batch statement %d.', $statement_step['index'] )
 				);
 			}
-			$results[] = WP_SQLite_Turso_Response::decode_result( $step );
+			$result = WP_SQLite_Turso_Response::decode_result( $step );
+
+			$meta_step = null === $statement_step['meta'] ? null : ( $step_results[ $statement_step['meta'] ] ?? null );
+			if ( is_array( $meta_step ) ) {
+				$meta = WP_SQLite_Turso_Response::decode_result( $meta_step );
+				if ( isset( $meta['rows'][0][0], $meta['rows'][0][1] ) ) {
+					$result['meta']['changes']     = (int) $meta['rows'][0][0];
+					$result['meta']['last_row_id'] = (int) $meta['rows'][0][1];
+				}
+			}
+			$results[] = $result;
 		}
 		return $results;
 	}

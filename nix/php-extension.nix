@@ -13,10 +13,14 @@
   src,
   # The Rust toolchain can come from a newer package set than the PHP build.
   rustPkgs ? pkgs,
+  # Build-time tools a crate needs beyond bindgen (pkg-config for TLS stacks).
+  extraNativeBuildInputs ? [ ],
 }:
 let
   # Only the crate directory: a source hash that depends on the whole flake
-  # would rebuild the crate on every unrelated commit.
+  # would rebuild the crate on every unrelated commit. The lock file is read
+  # from the original path: the narrowed copy exists only once it is built,
+  # and `nix flake check` reads the lock before then.
   crate = builtins.path {
     path = src;
     name = "${pname}-src";
@@ -26,10 +30,10 @@ rustPkgs.rustPlatform.buildRustPackage {
   inherit pname;
   version = "0.1.0";
   src = crate;
-  cargoLock.lockFile = "${crate}/Cargo.lock";
+  cargoLock.lockFile = "${src}/Cargo.lock";
 
   # ext-php-rs generates bindings against the PHP headers at build time.
-  nativeBuildInputs = [ rustPkgs.rustPlatform.bindgenHook ];
+  nativeBuildInputs = [ rustPkgs.rustPlatform.bindgenHook ] ++ extraNativeBuildInputs;
   env = {
     PHP_CONFIG = "${php.unwrapped.dev}/bin/php-config";
     PHP = "${php.unwrapped}/bin/php";
