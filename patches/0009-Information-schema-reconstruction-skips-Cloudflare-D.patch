@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Kevin Shenk <kevin@avu.nu>
 Date: Fri, 11 Sep 2026 18:18:21 -0400
-Subject: [PATCH 09/11] Information schema reconstruction skips Cloudflare D1's
+Subject: [PATCH 09/12] Information schema reconstruction skips Cloudflare D1's
  internal tables
 
 D1 keeps "_cf_METADATA" and "_cf_KV" in the database; they are not WordPress

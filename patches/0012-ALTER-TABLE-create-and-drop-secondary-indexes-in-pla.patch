@@ -1,0 +1,246 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Kevin Shenk <kevin@avu.nu>
+Date: Tue, 15 Sep 2026 10:57:00 -0400
+Subject: [PATCH 12/12] ALTER TABLE: create and drop secondary indexes in place
+
+An ALTER TABLE that only adds and drops secondary indexes -- ADD [UNIQUE]
+{INDEX|KEY} and DROP {INDEX|KEY} -- no longer rebuilds the table: the
+information schema is updated as before, and CREATE INDEX / DROP INDEX
+statements are derived from it, so the indexes come out exactly as a
+rebuild would have created them. Columns, PRIMARY KEY, FOREIGN KEY, CHECK,
+FULLTEXT and SPATIAL changes still take the rebuild path.
+
+A rebuild copies every row through a new table. On a remote backend that
+is the whole table over the wire, and on Turso -- where a multi-row insert
+into an AUTOINCREMENT table is quadratic -- it is prohibitive, for what
+dbDelta() runs on every plugin update whose schema gained a key.
+
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+---
+ .../src/sqlite/class-wp-mysql-on-sqlite.php   | 206 ++++++++++++++++++
+ 1 file changed, 206 insertions(+)
+
+diff --git a/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php b/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php
+index a173636..61ba7bc 100644
+--- a/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php
++++ b/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php
+@@ -3119,6 +3119,13 @@ class WP_MySQL_On_SQLite extends PDO {
+ 
+ 		$table_is_temporary = $this->information_schema_builder->temporary_table_exists( $table_name );
+ 
++		// Index-only changes need no table rebuild.
++		if ( $this->is_index_only_alter_table( $node ) ) {
++			$this->execute_index_only_alter_table( $table_is_temporary, $table_name, $node );
++			$this->apply_auto_increment_table_option( $table_is_temporary, $table_name, $node );
++			return;
++		}
++
+ 		// Save all column names from the original table.
+ 		$columns_table = $this->information_schema_builder->get_table_name( $table_is_temporary, 'columns' );
+ 		$column_names  = $this->execute_sqlite_query(
+@@ -3191,6 +3198,205 @@ class WP_MySQL_On_SQLite extends PDO {
+ 		//        consist only of operations that SQLite's ALTER TABLE supports.
+ 	}
+ 
++	/**
++	 * Whether an ALTER TABLE statement only adds and drops secondary indexes.
++	 *
++	 * "ADD [UNIQUE] {INDEX|KEY} ..." and "DROP {INDEX|KEY} ..." are the actions
++	 * SQLite performs in place, with CREATE INDEX and DROP INDEX. Everything
++	 * else -- columns, PRIMARY KEY, FOREIGN KEY, CHECK, FULLTEXT, SPATIAL --
++	 * goes through a table rebuild, which copies every row.
++	 *
++	 * @param  WP_Parser_Node $node The "alterStatement" AST node.
++	 * @return bool                 True when every action is an index addition or removal.
++	 */
++	private function is_index_only_alter_table( WP_Parser_Node $node ): bool {
++		$actions = $node->get_descendant_nodes( 'alterListItem' );
++		if ( 0 === count( $actions ) ) {
++			return false;
++		}
++		foreach ( $actions as $action ) {
++			$first_token = $action->get_first_child_token();
++			if ( null === $first_token ) {
++				return false;
++			}
++			if ( WP_MySQL_Lexer::ADD_SYMBOL === $first_token->id ) {
++				$constraint = $action->get_first_descendant_node( 'tableConstraintDef' );
++				if (
++					null === $constraint
++					|| null !== $constraint->get_first_child_node( 'checkConstraint' )
++					|| $constraint->has_child_token( WP_MySQL_Lexer::PRIMARY_SYMBOL )
++					|| $constraint->has_child_token( WP_MySQL_Lexer::FOREIGN_SYMBOL )
++					|| $constraint->has_child_token( WP_MySQL_Lexer::FULLTEXT_SYMBOL )
++					|| $constraint->has_child_token( WP_MySQL_Lexer::SPATIAL_SYMBOL )
++				) {
++					return false;
++				}
++				if (
++					null === $constraint->get_first_child_node( 'keyOrIndex' )
++					&& ! $constraint->has_child_token( WP_MySQL_Lexer::KEY_SYMBOL )
++					&& ! $constraint->has_child_token( WP_MySQL_Lexer::INDEX_SYMBOL )
++					&& ! $constraint->has_child_token( WP_MySQL_Lexer::UNIQUE_SYMBOL )
++				) {
++					return false;
++				}
++				continue;
++			}
++			if ( WP_MySQL_Lexer::DROP_SYMBOL === $first_token->id ) {
++				if (
++					(
++						null === $action->get_first_child_node( 'keyOrIndex' )
++						&& ! $action->has_child_token( WP_MySQL_Lexer::KEY_SYMBOL )
++						&& ! $action->has_child_token( WP_MySQL_Lexer::INDEX_SYMBOL )
++					)
++					|| null !== $action->get_first_child_node( 'fieldIdentifier' )
++					|| $action->has_child_token( WP_MySQL_Lexer::CONSTRAINT_SYMBOL )
++					|| $action->has_child_token( WP_MySQL_Lexer::PRIMARY_SYMBOL )
++					|| $action->has_child_token( WP_MySQL_Lexer::FOREIGN_SYMBOL )
++					|| $action->has_child_token( WP_MySQL_Lexer::CHECK_SYMBOL )
++				) {
++					return false;
++				}
++				continue;
++			}
++			return false;
++		}
++		return true;
++	}
++
++	/**
++	 * Execute an index-only ALTER TABLE statement without rebuilding the table.
++	 *
++	 * The information schema is updated first, as for any ALTER TABLE; the
++	 * SQLite statements are then derived from it, so an index is created
++	 * exactly as a table rebuild would create it (same name, same key parts,
++	 * same uniqueness). Dropped and added indexes are found by comparing the
++	 * index names before and after the update, which also covers an index
++	 * dropped and re-added in one statement.
++	 *
++	 * @param bool           $table_is_temporary Whether the table is temporary.
++	 * @param string         $table_name         The table name.
++	 * @param WP_Parser_Node $node               The "alterStatement" AST node.
++	 */
++	private function execute_index_only_alter_table(
++		bool $table_is_temporary,
++		string $table_name,
++		WP_Parser_Node $node
++	): void {
++		$dropped = array();
++		foreach ( $node->get_descendant_nodes( 'alterListItem' ) as $action ) {
++			$index_ref = $action->get_first_child_node( 'indexRef' );
++			if ( null !== $index_ref ) {
++				$dropped[] = $this->unquote_sqlite_identifier( $this->translate( $index_ref ) );
++			}
++		}
++
++		$before = $this->get_secondary_index_names( $table_is_temporary, $table_name );
++		$this->information_schema_builder->record_alter_table( $node );
++		$after = $this->get_secondary_index_names( $table_is_temporary, $table_name );
++		$added = array_merge(
++			array_diff( $after, $before ),
++			array_intersect( $dropped, $after )
++		);
++
++		$statements = array();
++		foreach ( $dropped as $index_name ) {
++			$statements[] = array(
++				sprintf(
++					'DROP INDEX IF EXISTS %s',
++					$this->quote_sqlite_identifier( $this->get_sqlite_index_name( $table_name, $index_name ) )
++				),
++			);
++		}
++		foreach ( $this->get_sqlite_create_index_statements( $table_is_temporary, $table_name, $added ) as $query ) {
++			$statements[] = array( $query );
++		}
++		if ( count( $statements ) > 0 ) {
++			$this->connection->execute_batch( $statements );
++		}
++	}
++
++	/**
++	 * Get the names of a table's secondary indexes from the information schema.
++	 *
++	 * @param  bool   $table_is_temporary Whether the table is temporary.
++	 * @param  string $table_name         The table name.
++	 * @return string[]                   The index names, PRIMARY excluded.
++	 */
++	private function get_secondary_index_names( bool $table_is_temporary, string $table_name ): array {
++		$statistics_table = $this->information_schema_builder->get_table_name( $table_is_temporary, 'statistics' );
++		return $this->execute_sqlite_query(
++			sprintf(
++				"SELECT DISTINCT index_name FROM %s
++				WHERE table_schema = ? AND table_name = ? AND index_name != 'PRIMARY'",
++				$this->quote_sqlite_identifier( $statistics_table )
++			),
++			array( $this->get_saved_db_name( $this->main_db_name ), $table_name )
++		)->fetchAll( PDO::FETCH_COLUMN );
++	}
++
++	/**
++	 * Build CREATE INDEX statements for some of a table's secondary indexes,
++	 * from the information schema.
++	 *
++	 * @param  bool     $table_is_temporary Whether the table is temporary.
++	 * @param  string   $table_name         The table name.
++	 * @param  string[] $index_names        The indexes to build.
++	 * @return string[]                     The SQLite CREATE INDEX statements.
++	 */
++	private function get_sqlite_create_index_statements(
++		bool $table_is_temporary,
++		string $table_name,
++		array $index_names
++	): array {
++		if ( 0 === count( $index_names ) ) {
++			return array();
++		}
++		$statistics_table = $this->information_schema_builder->get_table_name( $table_is_temporary, 'statistics' );
++		$rows             = $this->execute_sqlite_query(
++			sprintf(
++				'SELECT
++					index_name AS index_name,
++					non_unique AS non_unique,
++					column_name AS column_name,
++					collation AS collation
++				FROM %s
++				WHERE table_schema = ? AND table_name = ? AND index_name IN (%s)
++				ORDER BY index_name, seq_in_index',
++				$this->quote_sqlite_identifier( $statistics_table ),
++				implode( ', ', array_fill( 0, count( $index_names ), '?' ) )
++			),
++			array_merge( array( $this->get_saved_db_name( $this->main_db_name ), $table_name ), array_values( $index_names ) )
++		)->fetchAll( PDO::FETCH_ASSOC );
++
++		$indexes = array();
++		foreach ( $rows as $row ) {
++			$name = $row['index_name'];
++			if ( ! isset( $indexes[ $name ] ) ) {
++				$indexes[ $name ] = array(
++					'unique'  => '0' === (string) $row['non_unique'],
++					'columns' => array(),
++				);
++			}
++			$column = $this->quote_sqlite_identifier( $row['column_name'] );
++			if ( 'D' === $row['collation'] ) {
++				$column .= ' DESC';
++			}
++			$indexes[ $name ]['columns'][] = $column;
++		}
++
++		$queries = array();
++		foreach ( $indexes as $name => $index ) {
++			$queries[] = sprintf(
++				'CREATE %sINDEX %s ON %s (%s)',
++				$index['unique'] ? 'UNIQUE ' : '',
++				$this->quote_sqlite_identifier( $this->get_sqlite_index_name( $table_name, $name ) ),
++				$this->quote_sqlite_identifier( $table_name ),
++				implode( ', ', $index['columns'] )
++			);
++		}
++		return $queries;
++	}
++
+ 	/**
+ 	 * Translate and execute a MySQL DROP TABLE statement in SQLite.
+ 	 *
