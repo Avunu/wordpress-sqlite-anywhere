@@ -1,7 +1,7 @@
 # Turso backend
 
 A connection backend that runs the MySQL-on-SQLite driver against a
-[Turso](https://github.com/tursodatabase/turso) database, in either of two shapes.
+[Turso](https://github.com/tursodatabase/turso) database, in one of three shapes.
 
 **All primary.** Every statement goes to the primary over "SQL over HTTP". This is
 the control plane — wp-admin, cron, deployment tooling — which has to read its own
@@ -15,6 +15,18 @@ the rest of the PHP request to the primary, so it reads its own writes. This is
 the public front end: rendering a page never touches the network. Measured at
 22 ms per page and ~41 requests/second per vCPU, indistinguishable from reading
 the database file directly.
+
+**Embedded replica.** The `wp_turso` extension holds a replica open inside the PHP
+process (`WP_TURSO_REPLICA`) and pulls the primary's changes into it on an
+interval. Reads come from the replica; writes go to the primary, and the replica
+*pulls before the next read that follows a write*, so the request reads its own
+writes and still reads locally. One pull costs about one primary round trip,
+where latching would cost one per statement — plugins that write a visitor
+session or bump an option on every page view made that the difference between
+10 s and 2.5 s on a real site. A request that wrote also pulls once more in its
+shutdown, for the next request. Transactions latch as in the snapshot shape,
+and so does a request whose pull fails: read-your-writes never rests on a replica
+that could not catch up.
 
 ## Why a snapshot rather than the replica itself
 
@@ -74,7 +86,7 @@ driver has to emit SQL that works on both.
 | | |
 |---|---|
 | `class-wp-sqlite-turso-connection.php` | The primary connection, implementing `WP_SQLite_Connection_Interface`. |
-| `class-wp-sqlite-turso-replica-connection.php` | Snapshot reads, primary writes, and the latch. |
+| `class-wp-sqlite-turso-replica-connection.php` | Local reads, primary writes; the latch (snapshot) or pull-through (embedded replica). |
 | `trait-wp-sqlite-turso-protocol.php` | The pipeline protocol: the `changes()` ride-along and batch atomicity. |
 | `class-wp-sqlite-turso-http-transport.php` | Pure-PHP cURL transport, one reusable handle. |
 | `class-wp-sqlite-turso-response.php` | The value codec. |
