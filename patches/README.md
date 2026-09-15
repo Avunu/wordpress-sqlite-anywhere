@@ -33,6 +33,7 @@ the seam that makes that possible).
 | 0009 | information schema reconstruction skips D1's `_cf_*` tables | |
 | 0010 | column-key sync as two COALESCE'd assignments (Turso returns no row for the row-value form) | yes |
 | 0011 | `WP_MySQL_On_SQLite::$options_filter`, the test seam; inert in production | |
+| 0012 | index-only `ALTER TABLE` (ADD/DROP KEY) as `CREATE INDEX`/`DROP INDEX` instead of a table rebuild | yes |
 
 The bulk of what the remote backends need lives in `driver/` as additive
 files; the patches are the extension points upstream has no seam for.
