@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.2.0](https://github.com/Avunu/wordpress-sqlite-anywhere/compare/v1.1.0...v1.2.0) (2026-09-15)
+
+
+### Features
+
+* **driver:** index-only ALTER TABLE without a table rebuild ([#12](https://github.com/Avunu/wordpress-sqlite-anywhere/issues/12)) ([a6f27d3](https://github.com/Avunu/wordpress-sqlite-anywhere/commit/a6f27d32cb87ccd003cb1165c3ccb254ad2ef181))
+* **turso:** pull the embedded replica through a write instead of latching ([#10](https://github.com/Avunu/wordpress-sqlite-anywhere/issues/10)) ([654a36a](https://github.com/Avunu/wordpress-sqlite-anywhere/commit/654a36ad9366fc20f50572fda1de6b1a80058eed))
+
+
+### Miscellaneous Chores
+
+* bump phpunit/phpunit from 13.3.2 to 13.3.3 in the composer group ([#7](https://github.com/Avunu/wordpress-sqlite-anywhere/issues/7)) ([64ed8b7](https://github.com/Avunu/wordpress-sqlite-anywhere/commit/64ed8b78ad6affb974f44b039d633b9cd9eaf5c2))
+* bump the github-actions group with 2 updates ([#9](https://github.com/Avunu/wordpress-sqlite-anywhere/issues/9)) ([0c50650](https://github.com/Avunu/wordpress-sqlite-anywhere/commit/0c50650292bbd54416945d9a8f5921afd5624d8c))
+* bump wrangler in /packages/d1-proxy-worker in the npm group ([#8](https://github.com/Avunu/wordpress-sqlite-anywhere/issues/8)) ([f56dedb](https://github.com/Avunu/wordpress-sqlite-anywhere/commit/f56dedb2c5627e005f36a1ad0b5721d0dd5202ff))
+
 ## [1.1.0](https://github.com/Avunu/wordpress-sqlite-anywhere/compare/v1.0.0...v1.1.0) (2026-09-14)
 
 
