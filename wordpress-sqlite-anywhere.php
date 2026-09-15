@@ -5,7 +5,7 @@
  * Plugin URI:        https://github.com/Avunu/wordpress-sqlite-anywhere
  * Description:       WordPress on SQLite — local, Turso, or Cloudflare D1 over the wire. Bundles the SQLite Database Integration driver.
  * x-release-please-start-version
- * Version:           1.1.0
+ * Version:           1.2.0
  * x-release-please-end
  * Requires at least: 6.6
  * Tested up to:      7.1
