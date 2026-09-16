@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/Avunu/wordpress-sqlite-anywhere/compare/v1.2.0...v1.3.0) (2026-09-16)
+
+
+### Features
+
+* **driver:** translate the INTERVAL operator forms of date arithmetic ([#13](https://github.com/Avunu/wordpress-sqlite-anywhere/issues/13)) ([3f36325](https://github.com/Avunu/wordpress-sqlite-anywhere/commit/3f3632580d796ee8bef797d06f69d5b32936e9c1))
+
 ## [1.2.0](https://github.com/Avunu/wordpress-sqlite-anywhere/compare/v1.1.0...v1.2.0) (2026-09-15)
 
 

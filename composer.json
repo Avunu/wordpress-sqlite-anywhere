@@ -2,7 +2,7 @@
     "name": "avunu/wordpress-sqlite-anywhere",
     "description": "WordPress on SQLite — local, Turso, or Cloudflare D1 over the wire. Bundles the SQLite Database Integration driver.",
     "type": "wordpress-plugin",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "license": "GPL-2.0-or-later",
     "homepage": "https://github.com/Avunu/wordpress-sqlite-anywhere",
     "require": {
