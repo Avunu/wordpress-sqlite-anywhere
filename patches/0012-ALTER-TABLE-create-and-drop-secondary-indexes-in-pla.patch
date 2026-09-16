@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Kevin Shenk <kevin@avu.nu>
 Date: Tue, 15 Sep 2026 10:57:00 -0400
-Subject: [PATCH 12/12] ALTER TABLE: create and drop secondary indexes in place
+Subject: [PATCH 12/13] ALTER TABLE: create and drop secondary indexes in place
 
 An ALTER TABLE that only adds and drops secondary indexes -- ADD [UNIQUE]
 {INDEX|KEY} and DROP {INDEX|KEY} -- no longer rebuilds the table: the
