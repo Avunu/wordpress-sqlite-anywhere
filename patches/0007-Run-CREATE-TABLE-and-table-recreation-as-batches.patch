@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Kevin Shenk <kevin@avu.nu>
 Date: Fri, 11 Sep 2026 18:18:20 -0400
-Subject: [PATCH 07/12] Run CREATE TABLE and table recreation as batches
+Subject: [PATCH 07/13] Run CREATE TABLE and table recreation as batches
 
 The statements of a CREATE TABLE and of an ALTER TABLE table recreation
 never consume each other's results, so they are handed to the connection

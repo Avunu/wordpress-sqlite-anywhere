@@ -1,0 +1,153 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Kevin Shenk <kevin@avu.nu>
+Date: Wed, 16 Sep 2026 09:19:58 -0400
+Subject: [PATCH 13/13] Translate the INTERVAL operator forms of date
+ arithmetic
+
+"date + INTERVAL n unit", "date - INTERVAL n unit" and "INTERVAL n unit +
+date" are MySQL's operator spellings of DATE_ADD() and DATE_SUB(). The
+parser accepted them and the translator emitted them verbatim, so SQLite
+failed on the first token after INTERVAL. They now go through the same
+DATETIME() modifier as DATE_ADD()/DATE_SUB(), from one helper. WEEK
+becomes 7 DAY as before, and for a non-literal value the multiplication
+is emitted as SQL instead of done in PHP.
+
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+---
+ .../src/sqlite/class-wp-mysql-on-sqlite.php   | 101 ++++++++++++++++--
+ 1 file changed, 90 insertions(+), 11 deletions(-)
+
+diff --git a/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php b/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php
+index 61ba7bc..63e8c06 100644
+--- a/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php
++++ b/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php
+@@ -4698,6 +4698,11 @@ class WP_MySQL_On_SQLite extends PDO {
+ 					return null;
+ 				}
+ 				return $this->translate_sequence( $node->get_children() );
++			case 'bitExpr':
++				if ( $node->has_child_token( WP_MySQL_Lexer::INTERVAL_SYMBOL ) ) {
++					return $this->translate_bit_expr_with_intervals( $node );
++				}
++				return $this->translate_sequence( $node->get_children() );
+ 			case 'simpleExprBody':
+ 				return $this->translate_simple_expr_body( $node );
+ 			case 'predicateOperations':
+@@ -5206,6 +5211,76 @@ class WP_MySQL_On_SQLite extends PDO {
+ 		return $this->translate_sequence( $node->get_children() );
+ 	}
+ 
++	/**
++	 * Translate a "bitExpr" node containing "+ INTERVAL n unit" or
++	 * "- INTERVAL n unit" operations.
++	 *
++	 * The parser flattens a chain of operators into one node, so the children
++	 * are walked in order: an operand, then groups of either "<op> INTERVAL
++	 * <expr> <interval>" (a date modifier, applied to everything translated so
++	 * far) or "<op> <operand>" (ordinary arithmetic, appended as is).
++	 *
++	 * @param  WP_Parser_Node $node The "bitExpr" AST node.
++	 * @return string               The SQLite expression.
++	 */
++	private function translate_bit_expr_with_intervals( WP_Parser_Node $node ): string {
++		$children = $node->get_children();
++		$result   = $this->translate( $children[0] );
++		$compound = false;
++		$count    = count( $children );
++		for ( $i = 1; $i < $count; ) {
++			$operator = $children[ $i ];
++			if (
++				$operator instanceof WP_MySQL_Token
++				&& isset( $children[ $i + 1 ] )
++				&& $children[ $i + 1 ] instanceof WP_MySQL_Token
++				&& WP_MySQL_Lexer::INTERVAL_SYMBOL === $children[ $i + 1 ]->id
++			) {
++				$result   = $this->translate_date_arithmetic(
++					$compound ? "($result)" : $result,
++					WP_MySQL_Lexer::MINUS_OPERATOR === $operator->id ? '-' : '+',
++					$children[ $i + 2 ],
++					$children[ $i + 3 ]
++				);
++				$compound = false;
++				$i       += 4;
++				continue;
++			}
++			$result  .= ' ' . $this->translate( $operator ) . ' ' . $this->translate( $children[ $i + 1 ] );
++			$compound = true;
++			$i       += 2;
++		}
++		return $result;
++	}
++
++	/**
++	 * Translate date arithmetic -- DATE_ADD(), DATE_SUB(), "date + INTERVAL n
++	 * unit", "date - INTERVAL n unit" and "INTERVAL n unit + date" -- to a
++	 * SQLite DATETIME() modifier.
++	 *
++	 * @param  WP_Parser_Node|WP_MySQL_Token|string $date     The date expression, or its translation.
++	 * @param  string                               $sign     "+" or "-".
++	 * @param  WP_Parser_Node|WP_MySQL_Token        $value    The interval value expression.
++	 * @param  WP_Parser_Node                       $interval The "interval" AST node (the unit).
++	 * @return string                                         The SQLite expression.
++	 */
++	private function translate_date_arithmetic( $date, string $sign, $value, WP_Parser_Node $interval ): string {
++		$value = $this->translate( $value );
++		$unit  = $this->translate( $interval );
++		if ( 'WEEK' === $unit ) {
++			// In SQLite, "||" binds tighter than "*", hence the parentheses.
++			$unit  = 'DAY';
++			$value = is_numeric( $value ) ? (string) ( 7 * $value ) : sprintf( '((%s) * 7)', $value );
++		}
++		return sprintf(
++			"DATETIME(%s, '%s' || %s || ' %s')",
++			is_string( $date ) ? $date : $this->translate( $date ),
++			$sign,
++			$value,
++			$unit
++		);
++	}
++
+ 	/**
+ 	 * Translate a MySQL simple expression body to SQLite.
+ 	 *
+@@ -5235,6 +5310,17 @@ class WP_MySQL_On_SQLite extends PDO {
+ 			return sprintf( '%s COLLATE BINARY', $this->translate( $expr ) );
+ 		}
+ 
++		// "INTERVAL n unit + expr" (the interval may only come first with "+").
++		if ( null !== $token && WP_MySQL_Lexer::INTERVAL_SYMBOL === $token->id ) {
++			$exprs = $node->get_child_nodes( 'expr' );
++			return $this->translate_date_arithmetic(
++				$exprs[1],
++				'+',
++				$exprs[0],
++				$node->get_first_child_node( 'interval' )
++			);
++		}
++
+ 		// Translate "CAST(expr AS type)" to its SQLite equivalent.
+ 		if ( null !== $token && WP_MySQL_Lexer::CAST_SYMBOL === $token->id ) {
+ 			$expr      = $node->get_first_child_node( 'expr' );
+@@ -5401,18 +5487,11 @@ class WP_MySQL_On_SQLite extends PDO {
+ 			case WP_MySQL_Lexer::DATE_ADD_SYMBOL:
+ 			case WP_MySQL_Lexer::DATE_SUB_SYMBOL:
+ 				$nodes = $node->get_child_nodes();
+-				$value = $this->translate( $nodes[1] );
+-				$unit  = $this->translate( $nodes[2] );
+-				if ( 'WEEK' === $unit ) {
+-					$unit  = 'DAY';
+-					$value = 7 * $value;
+-				}
+-				return sprintf(
+-					"DATETIME(%s, '%s' || %s || ' %s')",
+-					$this->translate( $nodes[0] ),
++				return $this->translate_date_arithmetic(
++					$nodes[0],
+ 					WP_MySQL_Lexer::DATE_SUB_SYMBOL === $child->id ? '-' : '+',
+-					$value,
+-					$unit
++					$nodes[1],
++					$nodes[2]
+ 				);
+ 			case WP_MySQL_Lexer::LEFT_SYMBOL:
+ 				$nodes = $node->get_child_nodes();
