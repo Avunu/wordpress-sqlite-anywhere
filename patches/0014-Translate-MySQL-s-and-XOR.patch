@@ -1,0 +1,64 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Kevin Shenk <kevin@avu.nu>
+Date: Wed, 16 Sep 2026 10:20:20 -0400
+Subject: [PATCH 14/14] Translate MySQL's "&&", "!" and XOR
+
+"&&" and "!" are MySQL spellings of AND and NOT, which SQLite does not
+have; they failed to parse. XOR, which SQLite lacks too, becomes a CASE
+that is NULL when either side is and otherwise compares the sides' truth
+values. "||" is deliberately left alone: without PIPES_AS_CONCAT it is
+logical OR in MySQL, but the driver has always passed it to SQLite as
+string concatenation and its tests assert that.
+
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+---
+ .../src/sqlite/class-wp-mysql-on-sqlite.php   | 29 +++++++++++++++++++
+ 1 file changed, 29 insertions(+)
+
+diff --git a/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php b/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php
+index 63e8c06..87e762d 100644
+--- a/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php
++++ b/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php
+@@ -4698,6 +4698,25 @@ class WP_MySQL_On_SQLite extends PDO {
+ 					return null;
+ 				}
+ 				return $this->translate_sequence( $node->get_children() );
++			case 'expr':
++				// SQLite has no XOR. MySQL's is NULL when either side is, and
++				// otherwise compares the sides' truth values.
++				if ( $node->has_child_token( WP_MySQL_Lexer::XOR_SYMBOL ) ) {
++					$operands = array_map(
++						array( $this, 'translate' ),
++						$node->get_child_nodes()
++					);
++					$result   = array_shift( $operands );
++					foreach ( $operands as $operand ) {
++						$result = sprintf(
++							'CASE WHEN (%1$s) IS NULL OR (%2$s) IS NULL THEN NULL ELSE ((%1$s) <> 0) <> ((%2$s) <> 0) END',
++							$result,
++							$operand
++						);
++					}
++					return $result;
++				}
++				return $this->translate_sequence( $node->get_children() );
+ 			case 'bitExpr':
+ 				if ( $node->has_child_token( WP_MySQL_Lexer::INTERVAL_SYMBOL ) ) {
+ 					return $this->translate_bit_expr_with_intervals( $node );
+@@ -4877,6 +4896,16 @@ class WP_MySQL_On_SQLite extends PDO {
+ 				return $value;
+ 			case WP_MySQL_Lexer::AUTO_INCREMENT_SYMBOL:
+ 				return 'AUTOINCREMENT';
++			/*
++			 * MySQL's C-style logical operators, which SQLite does not have.
++			 * "||" is deliberately not translated: without PIPES_AS_CONCAT it
++			 * is logical OR in MySQL, but the driver has always passed it to
++			 * SQLite as string concatenation, and its tests assert that.
++			 */
++			case WP_MySQL_Lexer::LOGICAL_AND_OPERATOR:
++				return 'AND';
++			case WP_MySQL_Lexer::LOGICAL_NOT_OPERATOR:
++				return 'NOT';
+ 			case WP_MySQL_Lexer::BINARY_SYMBOL:
+ 				/*
+ 				 * "BINARY expr" is translated in "translate_simple_expr_body()".

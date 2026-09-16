@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Kevin Shenk <kevin@avu.nu>
 Date: Wed, 16 Sep 2026 09:19:58 -0400
-Subject: [PATCH 13/13] Translate the INTERVAL operator forms of date
+Subject: [PATCH 13/14] Translate the INTERVAL operator forms of date
  arithmetic
 
 "date + INTERVAL n unit", "date - INTERVAL n unit" and "INTERVAL n unit +
