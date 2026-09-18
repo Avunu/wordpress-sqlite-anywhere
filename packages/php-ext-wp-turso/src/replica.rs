@@ -29,8 +29,26 @@ use turso::Value;
 /// The open replicas of this process, keyed by database path.
 static REPLICAS: OnceLock<Mutex<HashMap<String, Arc<Replica>>>> = OnceLock::new();
 
-/// How many times a read is retried when the pull loop holds the WAL.
-const BUSY_RETRIES: u32 = 5;
+/// How many times a read is retried when the pull loop -- or another
+/// thread's on-demand `pull()` after its own write -- holds the WAL.
+///
+/// Raised from 5: at 5ms per attempt that was a ~75ms budget, and a burst of
+/// as few as 8 genuinely concurrent requests against one embedded replica
+/// (`ab -c 12`-style, or just several browser tabs) reliably exhausted it,
+/// surfacing "database is locked" as a fatal, uncaught error on a plain
+/// `SELECT` instead of the transient condition this loop exists to smooth
+/// over. Concurrent requests are the normal case for any real WordPress
+/// site, not an edge case worth a 75ms allowance.
+const BUSY_RETRIES: u32 = 30;
+
+/// The backoff step's ceiling, in milliseconds.
+///
+/// The delay grows with the attempt number so a single brief lock resolves
+/// on the first retry or two (imperceptible: 5-10ms), but capping it keeps
+/// BUSY_RETRIES attempts bounded to well under a second even in the worst
+/// case, rather than growing unboundedly (5ms * 30 would be 150ms on the
+/// last attempt alone, and over 2s summed).
+const BUSY_RETRY_STEP_CAP_MS: u64 = 30;
 
 /// How long a pull may take before it is abandoned.
 const PULL_TIMEOUT: Duration = Duration::from_secs(60);
@@ -254,18 +272,39 @@ impl Replica {
         let mut attempt = 0;
         let result = loop {
             match Self::run(&connection, sql, params.clone()).await {
-                Err(turso::Error::Busy(_)) | Err(turso::Error::BusySnapshot(_))
-                    if attempt < BUSY_RETRIES =>
-                {
-                    // The pull loop is applying changes; give it a moment.
+                Err(ref e) if attempt < BUSY_RETRIES && Self::is_lock_contention(e) => {
+                    // The pull loop -- or another request's on-demand pull
+                    // after its own write -- is applying changes; give it a
+                    // moment. A fresh connection from the pool retries no
+                    // better than the one that hit this, so the loop keeps
+                    // the same one rather than round-tripping take/give_back.
                     attempt += 1;
-                    tokio::time::sleep(Duration::from_millis(5 * u64::from(attempt))).await;
+                    let delay = (5 * u64::from(attempt)).min(BUSY_RETRY_STEP_CAP_MS);
+                    tokio::time::sleep(Duration::from_millis(delay)).await;
                 }
                 other => break other,
             }
         };
         self.give_back(connection);
         result.map_err(|e| e.to_string())
+    }
+
+    /// Whether an error is transient lock contention worth retrying, rather
+    /// than a real failure.
+    ///
+    /// `turso::Error::Busy`/`BusySnapshot` are the classified cases and are
+    /// matched directly. The message fallback is defensive belt-and-suspenders
+    /// for a pre-release dependency (`turso 0.8.0-pre.x`): the same "database
+    /// is locked" wording this crate hands out for `Busy` is also SQLite's
+    /// own canonical `SQLITE_BUSY` message, so a copy of it arriving wrapped
+    /// in some other variant is retried the same way rather than surfaced as
+    /// a fatal error the caller cannot do anything about.
+    fn is_lock_contention(error: &turso::Error) -> bool {
+        if matches!(error, turso::Error::Busy(_) | turso::Error::BusySnapshot(_)) {
+            return true;
+        }
+        let message = error.to_string().to_ascii_lowercase();
+        message.contains("database is locked") || message.contains("database table is locked")
     }
 
     async fn run(
