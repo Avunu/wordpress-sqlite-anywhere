@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.3.1](https://github.com/Avunu/wordpress-sqlite-anywhere/compare/v1.3.0...v1.3.1) (2026-09-18)
+
+
+### Bug Fixes
+
+* **turso:** widen the embedded replica's busy-retry budget for real concurrency ([#20](https://github.com/Avunu/wordpress-sqlite-anywhere/issues/20)) ([12652d6](https://github.com/Avunu/wordpress-sqlite-anywhere/commit/12652d60cc1abb2b3ed17702c2a743eef067a73e))
+
+
+### Miscellaneous Chores
+
+* bump phpunit/phpunit from 13.3.3 to 13.3.4 in the composer group ([#18](https://github.com/Avunu/wordpress-sqlite-anywhere/issues/18)) ([e359290](https://github.com/Avunu/wordpress-sqlite-anywhere/commit/e359290da673698e570422688f4050f8e9a566ef))
+* bump turso ([#17](https://github.com/Avunu/wordpress-sqlite-anywhere/issues/17)) ([2a06d9a](https://github.com/Avunu/wordpress-sqlite-anywhere/commit/2a06d9aab9bc9727082ab61275dd6f5b12c84081))
+* bump wrangler in /packages/d1-proxy-worker in the npm group ([#15](https://github.com/Avunu/wordpress-sqlite-anywhere/issues/15)) ([a0c62a2](https://github.com/Avunu/wordpress-sqlite-anywhere/commit/a0c62a240e4dd55c701198c5d1711faf95a3723c))
+
 ## [1.3.0](https://github.com/Avunu/wordpress-sqlite-anywhere/compare/v1.2.0...v1.3.0) (2026-09-16)
 
 
