@@ -361,6 +361,27 @@
             buildPhase = ''
               runHook preBuild
               composer --no-ansi install --no-interaction
+
+              # composition-c4 installs every package from a path repository into
+              # the store, and installed.json records them as `"dist": {"type":
+              # "path"}`. PHPStan >= 2.2.13 reads a path package as project code
+              # edited in place and tracks its files one by one instead of by
+              # package (phpstan-src#6356); after the analysis its main process then
+              # parses and reflects each of those files to record their exported
+              # nodes for the result cache -- the WordPress stubs included, past
+              # the memory limit. This is a plain install, not a path one, so drop
+              # the claim.
+              php -r '
+                $file = "vendor/composer/installed.json";
+                $installed = json_decode(file_get_contents($file), true, 512, JSON_THROW_ON_ERROR);
+                foreach ($installed["packages"] as &$package) {
+                  if (($package["dist"]["type"] ?? null) === "path") {
+                    unset($package["dist"]);
+                  }
+                }
+                file_put_contents($file, json_encode($installed, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+              '
+
               ln -s ${assembled} build
               phpstan analyse --no-progress --no-ansi --memory-limit=2G
               runHook postBuild
