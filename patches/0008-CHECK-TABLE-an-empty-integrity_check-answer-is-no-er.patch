@@ -11,7 +11,7 @@ indexing into that was an undefined offset.
  1 file changed, 7 insertions(+), 1 deletion(-)
 
 diff --git a/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php b/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php
-index 149280a..0dba573 100644
+index 83ae16d..df117e6 100644
 --- a/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php
 +++ b/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php
 @@ -4228,7 +4228,13 @@ class WP_MySQL_On_SQLite extends PDO {

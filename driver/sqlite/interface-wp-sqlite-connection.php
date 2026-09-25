@@ -44,6 +44,17 @@ interface WP_SQLite_Connection_Interface {
 	const CAPABILITY_USER_DEFINED_FUNCTIONS = 'user_defined_functions';
 
 	/**
+	 * Capability: A native REGEXP operator, i.e., a built-in "regexp()" SQL
+	 * function that needs no user-defined function to be registered.
+	 *
+	 * It only matters without user-defined functions, where it lets the
+	 * driver pass REGEXP through instead of refusing it. The native function
+	 * is expected to match case-sensitively, and to honour an inline "(?i)"
+	 * flag, as the Rust regex and PCRE engines do.
+	 */
+	const CAPABILITY_REGEXP = 'regexp';
+
+	/**
 	 * Execute a query in SQLite.
 	 *
 	 * @param  string       $sql    The query to execute.

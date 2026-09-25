@@ -13,7 +13,7 @@ before.
  1 file changed, 29 insertions(+), 17 deletions(-)
 
 diff --git a/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php b/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php
-index 923c879..149280a 100644
+index 80956b2..83ae16d 100644
 --- a/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php
 +++ b/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php
 @@ -3072,15 +3072,17 @@ class WP_MySQL_On_SQLite extends PDO {
@@ -43,7 +43,7 @@ index 923c879..149280a 100644
  
  		// Apply AUTO_INCREMENT = N table option, if any.
  		$this->apply_auto_increment_table_option( $table_is_temporary, $table_name, $node );
-@@ -5772,17 +5774,25 @@ class WP_MySQL_On_SQLite extends PDO {
+@@ -5774,17 +5776,25 @@ class WP_MySQL_On_SQLite extends PDO {
  		$pragma_foreign_keys = $this->execute_sqlite_query( 'PRAGMA foreign_keys' )->fetchColumn();
  		$this->execute_sqlite_query( 'PRAGMA foreign_keys = OFF' );
  
@@ -72,7 +72,7 @@ index 923c879..149280a 100644
  			sprintf(
  				'INSERT INTO %s (%s) SELECT %s FROM %s',
  				$quoted_tmp_table_name,
-@@ -5795,26 +5805,28 @@ class WP_MySQL_On_SQLite extends PDO {
+@@ -5797,26 +5807,28 @@ class WP_MySQL_On_SQLite extends PDO {
  					array_map( array( $this, 'quote_sqlite_identifier' ), array_keys( $column_map ) )
  				),
  				$quoted_table_name

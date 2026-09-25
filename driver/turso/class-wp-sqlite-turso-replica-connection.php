@@ -45,7 +45,10 @@
  * Capabilities are reported as the *primary's*, not the snapshot's, because any
  * transactional work happens there. That is conservative: it means the driver
  * emits the same UDF-less SQL on both paths, so a query does not change shape
- * depending on which side of the latch it lands on.
+ * depending on which side of the latch it lands on. The one capability the
+ * reader has to share is the native REGEXP operator, since a REGEXP read is
+ * served locally; a published snapshot gets a "regexp()" function mirroring
+ * Turso's (see regexp()).
  */
 class WP_SQLite_Turso_Replica_Connection implements WP_SQLite_Connection_Interface {
 	/**
@@ -78,6 +81,13 @@ class WP_SQLite_Turso_Replica_Connection implements WP_SQLite_Connection_Interfa
 	 * @var WP_SQLite_Turso_Connection
 	 */
 	private $primary;
+
+	/**
+	 * Whether the reader can run the native REGEXP operator.
+	 *
+	 * @var bool
+	 */
+	private $reader_has_regexp;
 
 	/**
 	 * Whether this request has latched to the primary.
@@ -125,6 +135,33 @@ class WP_SQLite_Turso_Replica_Connection implements WP_SQLite_Connection_Interfa
 	public function __construct( WP_SQLite_Connection_Interface $reader, WP_SQLite_Turso_Connection $primary ) {
 		$this->reader  = $reader;
 		$this->primary = $primary;
+
+		// A published snapshot is plain SQLite, which has no REGEXP of its own.
+		$this->reader_has_regexp = $reader->has_capability( self::CAPABILITY_REGEXP )
+			|| $reader->create_function( 'regexp', array( self::class, 'regexp' ) );
+	}
+
+	/**
+	 * A native-style "regexp( pattern, subject )" SQL function.
+	 *
+	 * Mirrors the one turso_core builds in: case-sensitive unless the pattern
+	 * says "(?i)", NULL for a NULL argument or an invalid pattern, and 1 or 0
+	 * otherwise. PCRE stands in for the Rust regex crate; the two agree on the
+	 * syntax WordPress queries use, and PCRE is only more permissive (it also
+	 * compiles backreferences and lookaround, which tursodb answers NULL).
+	 *
+	 * @param  mixed $pattern The regular expression.
+	 * @param  mixed $subject The value to match.
+	 * @return int|null       1 on a match, 0 on none, or null.
+	 */
+	public static function regexp( $pattern, $subject ): ?int {
+		if ( null === $pattern || null === $subject ) {
+			return null;
+		}
+		// A control character delimits the pattern, so "/" needs no escaping.
+		// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- an invalid pattern answers NULL, as the native function does.
+		$result = @preg_match( "\x01" . (string) $pattern . "\x01u", (string) $subject );
+		return false === $result ? null : $result;
 	}
 
 	/**
@@ -432,12 +469,16 @@ class WP_SQLite_Turso_Replica_Connection implements WP_SQLite_Connection_Interfa
 	 * The primary's answer governs. The snapshot could offer transactions,
 	 * savepoints, temporary tables and user-defined functions, but a statement
 	 * may be routed to either side, so the driver has to emit SQL that works on
-	 * both.
+	 * both. For the same reason, the native REGEXP operator also needs the
+	 * reader to have one.
 	 *
 	 * @param  string $capability One of the CAPABILITY_* interface constants.
 	 * @return bool               Whether the capability is supported.
 	 */
 	public function has_capability( string $capability ): bool {
+		if ( self::CAPABILITY_REGEXP === $capability && ! $this->reader_has_regexp ) {
+			return false;
+		}
 		return $this->primary->has_capability( $capability );
 	}
 

@@ -12,7 +12,7 @@ connection over a fake transport. Null in production; inert.
  1 file changed, 15 insertions(+)
 
 diff --git a/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php b/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php
-index 0dba573..a173636 100644
+index df117e6..452aa40 100644
 --- a/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php
 +++ b/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php
 @@ -514,6 +514,18 @@ class WP_MySQL_On_SQLite extends PDO {

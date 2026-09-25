@@ -13,7 +13,10 @@
  *     transport refuses to carry one.
  *   - Temporary tables are rejected: they would live on that same shared
  *     connection.
- *   - No user-defined functions are registered; SQL using them fails.
+ *   - No user-defined functions are registered; SQL using them fails. The
+ *     one function beyond plain SQLite is the "regexp()" tursodb builds in,
+ *     which backs the REGEXP operator; the fake stands in for it with the
+ *     replica connection's PCRE mirror of it.
  *   - Batches are atomic. The real transport spells the transaction out as
  *     BEGIN / conditional COMMIT / conditional ROLLBACK steps, because Turso's
  *     own batch keeps the effects of steps that ran before one failed.
@@ -56,7 +59,9 @@ class WP_SQLite_Turso_Fake_Transport implements WP_SQLite_Turso_Transport_Interf
 	 * @param PDO|null $pdo Optional. A PDO SQLite instance to use.
 	 */
 	public function __construct( ?PDO $pdo = null ) {
-		$this->pdo = $pdo ?? new PDO( 'sqlite::memory:' );
+		// PDO\SQLite where there is one: the base class's function
+		// registration is deprecated from PHP 8.5.
+		$this->pdo = $pdo ?? ( class_exists( 'PDO\SQLite' ) ? new PDO\SQLite( 'sqlite::memory:' ) : new PDO( 'sqlite::memory:' ) );
 		$this->pdo->setAttribute( PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION );
 
 		/*
@@ -64,6 +69,13 @@ class WP_SQLite_Turso_Fake_Transport implements WP_SQLite_Turso_Transport_Interf
 		 * fake leaves the SQLite default in place rather than forcing it on the
 		 * way the D1 fake has to.
 		 */
+
+		if ( $this->pdo instanceof PDO\SQLite ) {
+			$this->pdo->createFunction( 'regexp', array( WP_SQLite_Turso_Replica_Connection::class, 'regexp' ), 2 );
+		} else {
+			// phpcs:ignore Generic.PHP.DeprecatedFunctions.Deprecated
+			$this->pdo->sqliteCreateFunction( 'regexp', array( WP_SQLite_Turso_Replica_Connection::class, 'regexp' ), 2 );
+		}
 
 		try {
 			$this->external_stringify = (bool) $this->pdo->getAttribute( PDO::ATTR_STRINGIFY_FETCHES );
