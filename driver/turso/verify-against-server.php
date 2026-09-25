@@ -46,7 +46,7 @@ printf( "connection: %s\n", get_class( $connection ) );
 printf( "server version (from the snapshot): %s\n", $connection->get_server_version() );
 
 section( 'capabilities (the primary governs)' );
-foreach ( array( 'transactions', 'savepoints', 'temporary_tables', 'user_defined_functions' ) as $capability ) {
+foreach ( array( 'transactions', 'savepoints', 'temporary_tables', 'user_defined_functions', 'regexp' ) as $capability ) {
 	printf( "  %-24s %s\n", $capability, $connection->has_capability( $capability ) ? 'yes' : 'no' );
 }
 

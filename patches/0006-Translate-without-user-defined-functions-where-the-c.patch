@@ -8,14 +8,16 @@ Six call sites hand over to the overlay's WP_SQLite_UDF_Free_Translator:
 the MySQL functions normally emulated with UDFs become plain SQLite
 expressions (or are evaluated in PHP for constant arguments), IF() becomes
 CASE, LIKE BINARY patterns are converted at translation time, strict-mode
-errors are raised through a malformed-JSON trick instead of THROW(), and
-REGEXP and seeded RAND() are refused with a clear cause.
+errors are raised through a malformed-JSON trick instead of THROW(),
+REGEXP goes to the backend's native operator where the connection has one
+(and is refused with a clear cause where it has none), and seeded RAND()
+is refused with a clear cause.
 ---
- .../src/sqlite/class-wp-mysql-on-sqlite.php   | 93 +++++++++++++++++--
- 1 file changed, 84 insertions(+), 9 deletions(-)
+ .../src/sqlite/class-wp-mysql-on-sqlite.php   | 95 +++++++++++++++++--
+ 1 file changed, 86 insertions(+), 9 deletions(-)
 
 diff --git a/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php b/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php
-index d7e8d08..923c879 100644
+index d7e8d08..80956b2 100644
 --- a/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php
 +++ b/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php
 @@ -608,6 +608,13 @@ class WP_MySQL_On_SQLite extends PDO {
@@ -64,21 +66,23 @@ index d7e8d08..923c879 100644
  		}
  
  		/*
-@@ -5099,6 +5116,13 @@ class WP_MySQL_On_SQLite extends PDO {
- 	 * @throws WP_MySQL_On_SQLite_Exception When the translation fails.
- 	 */
- 	private function translate_regexp_functions( WP_Parser_Node $node ): string {
-+		if ( ! $this->supports_udfs ) {
-+			// The REGEXP operator requires the "regexp()" user-defined function.
-+			throw $this->new_not_supported_exception(
-+				'REGEXP (the connection does not support user-defined functions)'
-+			);
-+		}
-+
+@@ -5102,6 +5119,15 @@ class WP_MySQL_On_SQLite extends PDO {
  		$tokens    = $node->get_descendant_tokens();
  		$is_binary = isset( $tokens[1] ) && WP_MySQL_Lexer::BINARY_SYMBOL === $tokens[1]->id;
  
-@@ -5168,6 +5192,26 @@ class WP_MySQL_On_SQLite extends PDO {
++		if ( ! $this->supports_udfs ) {
++			// Without the "regexp()" user-defined function, only a backend's
++			// native REGEXP operator can serve the query.
++			return $this->udf_free_translator->translate_regexp(
++				$this->translate( $node->get_first_child_node() ),
++				$is_binary
++			);
++		}
++
+ 		/*
+ 		 * If the query says REGEXP BINARY, the comparison is byte-by-byte
+ 		 * and letter casing matters – lowercase and uppercase letters are
+@@ -5168,6 +5194,26 @@ class WP_MySQL_On_SQLite extends PDO {
  					$this->translate( $nodes[0] ),
  					$this->translate( $nodes[1] )
  				);
@@ -105,7 +109,7 @@ index d7e8d08..923c879 100644
  			default:
  				return $this->translate_sequence( $node->get_children() );
  		}
-@@ -5212,6 +5256,11 @@ class WP_MySQL_On_SQLite extends PDO {
+@@ -5212,6 +5258,11 @@ class WP_MySQL_On_SQLite extends PDO {
  				if ( 0 === count( $args ) ) {
  					return '((RANDOM() & ((1 << 53) - 1)) / ((1 << 53) * 1.0))';
  				}
@@ -117,7 +121,7 @@ index d7e8d08..923c879 100644
  				return $this->translate_sequence( $node->get_children() );
  			case 'DATE_FORMAT':
  				list ( $date, $mysql_format ) = $args;
-@@ -5278,6 +5327,12 @@ class WP_MySQL_On_SQLite extends PDO {
+@@ -5278,6 +5329,12 @@ class WP_MySQL_On_SQLite extends PDO {
  			case 'VERSION':
  				return $this->quote_sqlite_value( $this->get_mysql_server_version_string() );
  			default:
@@ -130,7 +134,7 @@ index d7e8d08..923c879 100644
  				return $this->translate_sequence( $node->get_children() );
  		}
  	}
-@@ -5318,6 +5373,24 @@ class WP_MySQL_On_SQLite extends PDO {
+@@ -5318,6 +5375,24 @@ class WP_MySQL_On_SQLite extends PDO {
  		return 'MySQL on SQLite';
  	}
  
@@ -155,7 +159,7 @@ index d7e8d08..923c879 100644
  	/**
  	 * Translate a MySQL datetime literal to SQLite.
  	 *
-@@ -6841,7 +6914,7 @@ class WP_MySQL_On_SQLite extends PDO {
+@@ -6841,7 +6916,7 @@ class WP_MySQL_On_SQLite extends PDO {
  							FROM (SELECT CAST(%s AS INTEGER) AS value)
  						)",
  						$is_strict_mode
@@ -164,7 +168,7 @@ index d7e8d08..923c879 100644
  							: "'0000'",
  						$translated_value
  					);
-@@ -6850,10 +6923,12 @@ class WP_MySQL_On_SQLite extends PDO {
+@@ -6850,10 +6925,12 @@ class WP_MySQL_On_SQLite extends PDO {
  				// In strict mode, invalid date/time values are rejected.
  				// In non-strict mode, they get an IMPLICIT DEFAULT value.
  				if ( $is_strict_mode ) {

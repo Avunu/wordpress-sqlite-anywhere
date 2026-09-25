@@ -21,7 +21,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
  1 file changed, 206 insertions(+)
 
 diff --git a/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php b/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php
-index a173636..61ba7bc 100644
+index 452aa40..49554ae 100644
 --- a/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php
 +++ b/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php
 @@ -3119,6 +3119,13 @@ class WP_MySQL_On_SQLite extends PDO {

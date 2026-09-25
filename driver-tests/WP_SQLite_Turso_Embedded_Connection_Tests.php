@@ -64,8 +64,9 @@ class WP_SQLite_Turso_Embedded_Connection_Tests extends WP_SQLite_Connection_Con
 	}
 
 	protected function expected_capabilities(): array {
-		// The primary governs, and Turso over HTTP has none of them.
-		return array();
+		// The primary governs, and Turso over HTTP has only a native REGEXP,
+		// which the replica has too.
+		return array( WP_SQLite_Connection_Interface::CAPABILITY_REGEXP );
 	}
 
 	private function create_embedded_connection(): WP_SQLite_Turso_Replica_Connection {

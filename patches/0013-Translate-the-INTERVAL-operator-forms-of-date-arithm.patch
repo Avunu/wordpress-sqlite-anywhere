@@ -18,7 +18,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
  1 file changed, 90 insertions(+), 11 deletions(-)
 
 diff --git a/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php b/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php
-index 61ba7bc..63e8c06 100644
+index 49554ae..ac0d50d 100644
 --- a/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php
 +++ b/packages/mysql-on-sqlite/src/sqlite/class-wp-mysql-on-sqlite.php
 @@ -4698,6 +4698,11 @@ class WP_MySQL_On_SQLite extends PDO {
@@ -128,7 +128,7 @@ index 61ba7bc..63e8c06 100644
  		// Translate "CAST(expr AS type)" to its SQLite equivalent.
  		if ( null !== $token && WP_MySQL_Lexer::CAST_SYMBOL === $token->id ) {
  			$expr      = $node->get_first_child_node( 'expr' );
-@@ -5401,18 +5487,11 @@ class WP_MySQL_On_SQLite extends PDO {
+@@ -5403,18 +5489,11 @@ class WP_MySQL_On_SQLite extends PDO {
  			case WP_MySQL_Lexer::DATE_ADD_SYMBOL:
  			case WP_MySQL_Lexer::DATE_SUB_SYMBOL:
  				$nodes = $node->get_child_nodes();

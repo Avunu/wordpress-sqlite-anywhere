@@ -37,6 +37,7 @@ abstract class WP_SQLite_Connection_Conformance_Test_Case extends TestCase {
 				WP_SQLite_Connection_Interface::CAPABILITY_SAVEPOINTS,
 				WP_SQLite_Connection_Interface::CAPABILITY_TEMPORARY_TABLES,
 				WP_SQLite_Connection_Interface::CAPABILITY_USER_DEFINED_FUNCTIONS,
+				WP_SQLite_Connection_Interface::CAPABILITY_REGEXP,
 			) as $capability
 		) {
 			$this->assertSame(
@@ -195,6 +196,26 @@ abstract class WP_SQLite_Connection_Conformance_Test_Case extends TestCase {
 		$this->assertSame(
 			'42',
 			(string) $connection->query( 'SELECT wp_test_conformance_double(21)' )->fetchColumn()
+		);
+	}
+
+	public function test_native_regexp(): void {
+		if ( ! $this->expects_capability( WP_SQLite_Connection_Interface::CAPABILITY_REGEXP ) ) {
+			$this->markTestSkipped( 'The connection has no native REGEXP operator.' );
+		}
+
+		$connection = $this->create_connection();
+		$row        = $connection->query(
+			"SELECT 'A1b' REGEXP 'a1', 'A1b' REGEXP '(?i)a1', 'a/b' REGEXP '^a/b$', NULL REGEXP 'a'"
+		)->fetch( PDO::FETCH_NUM );
+		$this->assertSame(
+			array( '0', '1', '1', null ),
+			array_map(
+				function ( $value ) {
+					return null === $value ? null : (string) $value;
+				},
+				$row
+			)
 		);
 	}
 

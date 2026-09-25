@@ -101,7 +101,7 @@ function wp_sqlite_tests_skip_unsupported( PHPUnit\Framework\TestCase $test ): v
 	$reasons = array(
 		'transactions'     => $name . ' does not support interactive transactions.',
 		'temporary tables' => $name . ' does not support temporary tables.',
-		'REGEXP'           => $name . ' does not support the REGEXP operator (no user-defined functions).',
+		'REGEXP'           => $name . ' does not support the REGEXP operator (no user-defined functions, no native one).',
 		'seeded RAND'      => $name . ' does not support seeded RAND(N) (no user-defined functions).',
 		'strict messages'  => 'Strict mode error messages differ without user-defined functions.',
 		'PHP evaluation'   => 'The function requires constant arguments without user-defined functions.',
@@ -201,10 +201,6 @@ function wp_sqlite_tests_remote_backend_skip_list(): array {
 		'WP_MySQL_On_SQLite_Tests::testNonStrictModeWithTemporaryTable' => 'temporary tables',
 		'WP_MySQL_On_SQLite_Tests::testTemporaryTableHasPriorityOverStandardTable' => 'temporary tables',
 
-		// The REGEXP operator.
-		'WP_MySQL_On_SQLite_Tests::testRegexp'             => 'REGEXP',
-		'WP_MySQL_On_SQLite_Tests::testRegexps'            => 'REGEXP',
-
 		// Seeded RAND(N).
 		'WP_MySQL_On_SQLite_Tests::testRandOrderBy'        => 'seeded RAND',
 		'WP_MySQL_On_SQLite_Tests::testRandInUpdateAndInsert' => 'seeded RAND',
@@ -263,6 +259,12 @@ function wp_sqlite_tests_remote_backend_skip_list(): array {
 		$list['WP_MySQL_On_SQLite_Tests::testRemovedSqlModeBitmapThrowsMySQLError']    = 'native types';
 		$list['WP_MySQL_On_SQLite_Tests::testSqlModeRejectsIncorrectValueType']        = 'native types';
 		$list['WP_MySQL_On_SQLite_Tests::testNoBackslashEscapesSqlModeIsNotSupported'] = 'native types';
+	}
+
+	// The REGEXP operator: Turso has a native one, D1 does not.
+	if ( 'd1' === wp_sqlite_tests_backend() ) {
+		$list['WP_MySQL_On_SQLite_Tests::testRegexp']  = 'REGEXP';
+		$list['WP_MySQL_On_SQLite_Tests::testRegexps'] = 'REGEXP';
 	}
 
 	return $list;

@@ -447,15 +447,18 @@ class WP_SQLite_Turso_Connection implements WP_SQLite_Connection_Interface {
 	/**
 	 * Check whether the connection supports an optional capability.
 	 *
-	 * None of them, for the reasons given in the class description: a BEGIN
-	 * outlives its HTTP request, temporary tables would live on a connection
-	 * shared with other clients, and PHP callbacks cannot run server-side.
+	 * Only the native REGEXP operator: tursodb builds a "regexp()" function
+	 * into its core, and Turso Cloud documents a sqlean-compatible one. The
+	 * rest are withheld for the reasons given in the class description: a
+	 * BEGIN outlives its HTTP request, temporary tables would live on a
+	 * connection shared with other clients, and PHP callbacks cannot run
+	 * server-side.
 	 *
 	 * @param  string $capability One of the CAPABILITY_* interface constants.
-	 * @return bool               Always false.
+	 * @return bool               Whether the capability is supported.
 	 */
 	public function has_capability( string $capability ): bool {
-		return false;
+		return self::CAPABILITY_REGEXP === $capability;
 	}
 
 	/**

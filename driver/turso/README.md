@@ -67,6 +67,7 @@ correct against both.
 | Errors | Cloud wraps messages as `Tursodb error: <stage> error: <message>`, the CLI as `<stage> error: <message>`. Both layers are stripped so the driver's MySQL identity mapping fires (`no such table` → `42S02` / `1146`, verified on Cloud). |
 | Temporary tables | Reported unsupported — on the CLI they would live on the shared connection; on Cloud they would vanish with the request. |
 | User-defined functions | Impossible remotely; the driver's UDF-less rewrites are used. |
+| `REGEXP` | **Native**: tursodb builds a `regexp()` function into its core (Rust regex), verified on the CLI; Cloud documents a sqlean-compatible one, not yet probed here. Reported as a capability, so the driver passes `REGEXP` through, adding `(?i)` for MySQL's case-insensitive match; `REGEXP BINARY` stays case-sensitive. |
 | Bound parameters | Not capped the way D1's are: 1000 in one statement is fine. Inlining remains only as a safety valve. |
 
 Latency from a home connection to `aws-us-east-1`: **32 ms per warm round trip,
@@ -79,7 +80,9 @@ reading over the wire to **22.6 ms** reading the snapshot.
 The replica connection reports the **primary's** capabilities, not the snapshot's.
 The snapshot could offer transactions, savepoints, temporary tables and
 user-defined functions, but a statement may be routed to either side, so the
-driver has to emit SQL that works on both.
+driver has to emit SQL that works on both. The native `REGEXP` is the one
+capability the reader must share: the embedded replica has turso_core's, and a
+published snapshot is given a PCRE `regexp()` that mirrors it.
 
 ## Files
 
@@ -132,8 +135,8 @@ remote-backend gaps that used to fail were shared, and closing them fixed both.
 
 The 102 skips are the tests a remote backend genuinely cannot run, and the skip
 list names a reason for each: transactions and savepoints (a `BEGIN` cannot
-outlive its HTTP request), temporary tables, `REGEXP` and seeded `RAND(N)` and
-the other PHP-evaluated functions (no user-defined functions), detailed column
+outlive its HTTP request), temporary tables, seeded `RAND(N)` and the other
+PHP-evaluated functions (no user-defined functions), detailed column
 metadata, the two tests that reach past the connection to a PDO SQLite handle
 that is not there, and `PDO::FETCH_NAMED`, which returns numeric column names as
 *string* array keys — something PDO builds below the language and a pure-PHP

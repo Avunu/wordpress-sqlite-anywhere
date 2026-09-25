@@ -4,6 +4,8 @@ use PHPUnit\Framework\TestCase;
 
 require_once __DIR__ . '/../src/d1/load.php';
 require_once __DIR__ . '/tools/class-wp-sqlite-d1-fake-transport.php';
+require_once __DIR__ . '/../src/turso/load.php';
+require_once __DIR__ . '/tools/class-wp-sqlite-turso-fake-transport.php';
 
 /**
  * Tests for MySQL function translation on connections without user-defined
@@ -13,6 +15,7 @@ require_once __DIR__ . '/tools/class-wp-sqlite-d1-fake-transport.php';
  * the default SQLite backend (where MySQL functions are emulated with PHP
  * callbacks registered as SQL functions) and through the D1 backend (where
  * they are rewritten to plain SQLite expressions), and results are compared.
+ * REGEXP runs through the Turso backend, which has a native operator.
  */
 class WP_MySQL_On_SQLite_No_UDF_Tests extends TestCase {
 	/**
@@ -29,6 +32,13 @@ class WP_MySQL_On_SQLite_No_UDF_Tests extends TestCase {
 	 */
 	private $d1_driver;
 
+	/**
+	 * A driver using the Turso connection: no UDFs, but a native REGEXP.
+	 *
+	 * @var WP_SQLite_Driver
+	 */
+	private $turso_driver;
+
 	public function setUp(): void {
 		$this->sqlite_driver = new WP_SQLite_Driver(
 			new WP_SQLite_Connection( array( 'path' => ':memory:' ) ),
@@ -36,6 +46,10 @@ class WP_MySQL_On_SQLite_No_UDF_Tests extends TestCase {
 		);
 		$this->d1_driver     = new WP_SQLite_Driver(
 			new WP_SQLite_D1_Connection( new WP_SQLite_D1_Fake_Transport() ),
+			'wp'
+		);
+		$this->turso_driver  = new WP_SQLite_Driver(
+			new WP_SQLite_Turso_Connection( new WP_SQLite_Turso_Fake_Transport() ),
 			'wp'
 		);
 	}
@@ -145,6 +159,43 @@ class WP_MySQL_On_SQLite_No_UDF_Tests extends TestCase {
 		$this->expectException( WP_MySQL_On_SQLite_Exception::class );
 		$this->expectExceptionMessage( 'REGEXP' );
 		$this->d1_driver->query( "SELECT * FROM t WHERE name REGEXP '^a'" );
+	}
+
+	/**
+	 * REGEXP conditions that must select the same rows on both backends.
+	 */
+	public static function data_regexp_conditions(): array {
+		return array(
+			array( "name REGEXP '^rss_'" ),
+			array( "name RLIKE '^RSS_.+$'" ),
+			array( "name REGEXP BINARY '^rss_'" ),
+			array( "name NOT REGEXP '^RSS_'" ),
+			array( "name NOT RLIKE BINARY '^RSS_'" ),
+			array( "name REGEXP 'a/b'" ),
+			array( "name NOT REGEXP '(1)'" ),
+			array( "name REGEXP CONCAT('^', 'TRANS')" ),
+		);
+	}
+
+	/**
+	 * @dataProvider data_regexp_conditions
+	 */
+	public function test_native_regexp_matches_sqlite_backend( string $condition ): void {
+		$query = "SELECT name FROM t WHERE $condition ORDER BY name";
+		foreach ( array( $this->sqlite_driver, $this->turso_driver ) as $driver ) {
+			$driver->query( 'CREATE TABLE t ( name TEXT )' );
+			$driver->query( "INSERT INTO t (name) VALUES ('rss_123'), ('RSS_123'), ('transient'), ('a/b')" );
+		}
+		$this->assertEquals(
+			$this->sqlite_driver->query( $query ),
+			$this->turso_driver->query( $query ),
+			$condition
+		);
+	}
+
+	public function test_native_regexp_with_null_is_null(): void {
+		$rows = $this->turso_driver->query( "SELECT NULL REGEXP 'a' AS value" );
+		$this->assertNull( $rows[0]->value );
 	}
 
 	public function test_seeded_rand_is_reported_as_not_supported(): void {

@@ -387,15 +387,16 @@ class WP_SQLite_Turso_Embedded_Reader implements WP_SQLite_Connection_Interface 
 	/**
 	 * Check whether the connection supports an optional capability.
 	 *
-	 * A read-only replica supports none: transactions and savepoints belong
-	 * to the primary, temporary tables would be local writes, and there are
-	 * no user-defined functions.
+	 * A read-only replica supports only the native REGEXP operator, which
+	 * turso_core always registers: transactions and savepoints belong to the
+	 * primary, temporary tables would be local writes, and there are no
+	 * user-defined functions.
 	 *
 	 * @param  string $capability One of the CAPABILITY_* interface constants.
-	 * @return bool               Always false.
+	 * @return bool               Whether the capability is supported.
 	 */
 	public function has_capability( string $capability ): bool {
-		return false;
+		return self::CAPABILITY_REGEXP === $capability;
 	}
 
 	/**

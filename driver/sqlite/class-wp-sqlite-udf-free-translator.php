@@ -91,6 +91,37 @@ final class WP_SQLite_UDF_Free_Translator {
 	}
 
 	/**
+	 * Translate a MySQL "REGEXP pattern" operator to the backend's native one.
+	 *
+	 * With user-defined functions the driver emulates REGEXP with a PHP
+	 * callback. Without them, only a backend with a built-in "regexp()"
+	 * function can run it, and its pattern syntax is the backend's own: the
+	 * Rust regex crate (tursodb, the embedded replica) or, per its docs,
+	 * sqlean's PCRE2 (Turso Cloud). Both cover what WordPress queries use;
+	 * Rust regex lacks backreferences and lookaround, and answers NULL for a
+	 * pattern using them.
+	 *
+	 * The native function matches case-sensitively, so a plain REGEXP, which
+	 * MySQL runs case-insensitively under WordPress's "_ci" collations, gets
+	 * an inline "(?i)" flag. REGEXP BINARY stays case-sensitive.
+	 *
+	 * @param  string $pattern   The translated SQLite pattern expression.
+	 * @param  bool   $is_binary Whether the operator is "REGEXP BINARY".
+	 * @return string            The "REGEXP ..." operator fragment.
+	 * @throws WP_MySQL_On_SQLite_Exception When the connection has no native REGEXP.
+	 */
+	public function translate_regexp( string $pattern, bool $is_binary ): string {
+		if ( ! $this->connection->has_capability( WP_SQLite_Connection_Interface::CAPABILITY_REGEXP ) ) {
+			throw $this->new_exception(
+				'REGEXP (the connection supports neither user-defined functions nor a native REGEXP operator)'
+			);
+		}
+		// "||" binds tighter than any other SQLite operator, so without the
+		// parentheses "'(?i)' || a + b" would prefix the flag to "a" alone.
+		return $is_binary ? 'REGEXP ' . $pattern : "REGEXP '(?i)' || (" . $pattern . ')';
+	}
+
+	/**
 	 * Translate a MySQL function that is normally emulated with a user-defined
 	 * SQL function to a plain SQLite expression.
 	 *
