@@ -16,7 +16,7 @@ on:
 
 jobs:
   nix:
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","nixos"]') }}
     strategy:
       fail-fast: false
       matrix:
@@ -44,17 +44,19 @@ jobs:
       # default install just has determinate-nixd fail to log into FlakeHub
       # for a repo that isn't registered there.
       - uses: DeterminateSystems/nix-installer-action@v23
+        if: runner.environment == 'github-hosted'
         with:
           determinate: false
       # `use-flakehub: false` — same reason, for the cache action's own probe.
       - uses: DeterminateSystems/magic-nix-cache-action@v15
+        if: runner.environment == 'github-hosted'
         with:
           use-flakehub: false
 
       - run: nix build .#checks.x86_64-linux.${{ matrix.check }} -L
 
   upstream-pin:
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","nixos"]') }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -66,7 +68,7 @@ jobs:
       - run: bin/verify-upstream-pin.sh
 
   worker:
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","nixos"]') }}
     defaults:
       run:
         working-directory: packages/d1-proxy-worker
