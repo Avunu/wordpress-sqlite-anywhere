@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","nixos"]') }}
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
@@ -30,16 +30,18 @@ jobs:
   publish:
     needs: release
     if: ${{ needs.release.outputs.release_created }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","nixos"]') }}
     steps:
       - uses: actions/checkout@v7
         with:
           submodules: true
 
       - uses: DeterminateSystems/nix-installer-action@v23
+        if: runner.environment == 'github-hosted'
         with:
           determinate: false
       - uses: DeterminateSystems/magic-nix-cache-action@v15
+        if: runner.environment == 'github-hosted'
         with:
           use-flakehub: false
 
@@ -56,7 +58,7 @@ jobs:
   notify-failure:
     needs: [release, publish]
     if: ${{ always() && needs.release.outputs.release_created && needs.publish.result == 'failure' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","nixos"]') }}
     permissions:
       issues: write
     steps:
