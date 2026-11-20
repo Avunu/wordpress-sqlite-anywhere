@@ -5,10 +5,6 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     composition-c4.url = "github:fossar/composition-c4";
-    git-hooks = {
-      url = "github:cachix/git-hooks.nix";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
 
     # upstream/ is a git submodule (WordPress/sqlite-database-integration at a
     # release tag). Fetch it with the flake, so `self` carries the driver source
@@ -23,7 +19,6 @@
       nixpkgs,
       flake-utils,
       composition-c4,
-      git-hooks,
     }:
     flake-utils.lib.eachDefaultSystem (
       system:
@@ -243,65 +238,9 @@
               touch "$out"
             '';
 
-        # ------------------------------------------------------------------ #
-        # git-hooks.nix — local pre-push quality gates. The PHP hooks need    #
-        # composer vendor trees and the assembled build/, which the read-only #
-        # `nix flake check` sandbox does not have, so they run at the         #
-        # `pre-push` stage: installed locally by the devShell shellHook,      #
-        # skipped by the sandboxed flake check. CI covers the same ground via #
-        # the flake checks.                                                   #
-        # ------------------------------------------------------------------ #
-        preCommitCheck = git-hooks.lib.${system}.run {
-          src = self;
-          hooks = {
-            phpstan = {
-              enable = true;
-              name = "phpstan (level 8, WordPress-aware)";
-              package = phpstan;
-              entry = "composer phpstan";
-              files = "\\.php$|\\.copy$";
-              pass_filenames = false;
-              stages = [ "pre-push" ];
-            };
-            phpcs = {
-              enable = true;
-              name = "phpcs (PSR-12, house-style paths)";
-              entry = "${phpcs}/bin/phpcs";
-              files = "\\.php$|\\.copy$";
-              pass_filenames = false;
-              stages = [ "pre-push" ];
-            };
-            phpcs-driver = {
-              enable = true;
-              name = "phpcs (WordPress, driver overlays)";
-              entry = "driver-tests/tools-project/vendor/bin/phpcs --standard=phpcs-driver.xml.dist";
-              files = "^(driver|driver-tests|plugin)/.*\\.php$";
-              pass_filenames = false;
-              stages = [ "pre-push" ];
-            };
-            cargo-fmt = {
-              enable = true;
-              name = "cargo fmt --check (all crates)";
-              entry = "${pkgs.writeShellScript "cargo-fmt-check" ''
-                set -e
-                for crate in packages/turso-snapshot-publisher packages/php-ext-wp-d1-client packages/php-ext-wp-turso; do
-                  ${pkgs.cargo}/bin/cargo fmt --manifest-path "$crate/Cargo.toml" --check
-                done
-              ''}";
-              files = "\\.rs$";
-              pass_filenames = false;
-              stages = [ "pre-push" ];
-            };
-
-            nixfmt.enable = true;
-            statix.enable = true;
-            deadnix.enable = true;
-          };
-        };
       in
       {
         devShells.default = pkgs.mkShell {
-          inherit (preCommitCheck) shellHook;
           # ext-php-rs generates bindings against the PHP headers at build
           # time, so `cargo build` in packages/php-ext-* works in the shell.
           env = {
@@ -328,8 +267,9 @@
             # tursodb: a local sync server for the live Turso probe
             # (driver/turso/verify-against-server.php).
             pkgs.turso
-          ]
-          ++ preCommitCheck.enabledPackages;
+            # statix: the Nix lint behind the statix hook in .pre-commit-config.yaml.
+            pkgs.statix
+          ];
         };
 
         checks = {
@@ -515,10 +455,6 @@
                     --no-coverage --colors=never tests/WP_SQLite_Turso_Embedded_Connection_Tests.php
                 touch "$out"
               '';
-
-          # nix flake check also validates the git-hooks config (sandbox-safe hooks
-          # only; the pre-push PHP hooks are skipped here).
-          pre-commit = preCommitCheck;
         };
 
         packages = {

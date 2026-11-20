@@ -2,8 +2,8 @@ name: Check
 
 # Quality gates on every push and pull request (so Dependabot PRs are gated before
 # auto-merge). Everything PHP, Nix and Rust runs through the flake's `checks`, one
-# matrix job per check, so a failure names the gate that tripped. The D1 proxy
-# worker's tests run on a plain runner: its vitest pool needs workerd, which the
+# matrix job per check, so a failure names the gate that tripped. The git hooks run
+# through prek in the `pre-commit` job. The D1 proxy worker's tests run on a plain runner: its vitest pool needs workerd, which the
 # read-only Nix sandbox cannot host.
 #
 # The upstream submodule must be checked out for every job: bin/assemble.sh and
@@ -33,7 +33,6 @@ jobs:
           - turso-embedded
           - publisher
           - d1-client
-          - pre-commit
     name: ${{ matrix.check }}
     steps:
       - uses: actions/checkout@v7
@@ -84,3 +83,22 @@ jobs:
       - run: npm ci
 
       - run: npm test
+
+  # The git hooks in .pre-commit-config.yaml at their commit stage, over the whole tree.
+  # The job keeps the `pre-commit` check name that `main` requires. The hooks need no nix:
+  # nixfmt and deadnix are fetched by prek, and statix is built at the nixpkgs-pinned rev.
+  pre-commit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install prek and statix
+        run: |
+          pipx install prek==0.5.10
+          cargo install --locked --git https://github.com/oppiliappan/statix --rev 52530001bdbc8e94aae0d406a929c7ad7f09d9d1
+
+      - run: prek run --all-files
