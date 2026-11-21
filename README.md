@@ -38,6 +38,8 @@ cd wordpress-sqlite-anywhere
 nix develop          # or `direnv allow`
 composer install
 composer assemble    # upstream driver + patches + overlays → build/
+uv tool install prek # git hooks without nix: see .pre-commit-config.yaml
+prek install -t pre-commit -t pre-push
 ```
 
 `nix build` produces the installable plugin under `result/share/wordpress/plugins/wordpress-sqlite-anywhere`; `nix build .#zip` produces the release zip.
@@ -153,9 +155,9 @@ WP_SQLITE_TEST_BACKEND=d1    ../../../driver-tests/tools-project/vendor/bin/phpu
 WP_SQLITE_TEST_BACKEND=turso ../../../driver-tests/tools-project/vendor/bin/phpunit --testsuite remote
 ```
 
-Every check also exists as a flake check, which is what CI runs: `nix build .#checks.x86_64-linux.<name> -L` for `assembled`, `plugin-header`, `phpstan`, `phpcs`, `phpcs-driver`, `phpunit`, `driver-pdo`, `driver-d1`, `driver-turso`, `turso-embedded` (the extension against a local `tursodb --sync-server`), `publisher`, `d1-client` and `pre-commit`; the D1 proxy worker's vitest suite runs on a plain Node runner (its pool needs workerd). `nix flake check` runs the sandbox-safe subset; the pre-push git hooks run PHPStan, PHPCS and the Nix linters locally — push from `nix develop` so they find their tools.
+Every check also exists as a flake check, which is what CI runs: `nix build .#checks.x86_64-linux.<name> -L` for `assembled`, `plugin-header`, `phpstan`, `phpcs`, `phpcs-driver`, `phpunit`, `driver-pdo`, `driver-d1`, `driver-turso`, `turso-embedded` (the extension against a local `tursodb --sync-server`), `publisher` and `d1-client`; the D1 proxy worker's vitest suite runs on a plain Node runner (its pool needs workerd). The git hooks in `.pre-commit-config.yaml` run under prek, without nix: `nixfmt`, `deadnix` and `statix` at commit time, and PHPStan, PHPCS and `cargo fmt --check` at pre-push time over the whole tree. The `pre-commit` CI job runs the commit-time hooks. The pre-push tools come from `nix develop` or the pinned installs noted in the config.
 
-`main` requires every one of those jobs to pass; Dependabot PRs auto-merge once they do. Majors of the driver suites' PHPUnit and of the worker's vitest stack are held back in `.github/dependabot.yml` (upstream's suites use PHPUnit 8/9 APIs; the worker config predates the Vitest 4 plugin form).
+`main` requires every one of those jobs and the `pre-commit` job to pass; Dependabot PRs auto-merge once they do. Majors of the driver suites' PHPUnit and of the worker's vitest stack are held back in `.github/dependabot.yml` (upstream's suites use PHPUnit 8/9 APIs; the worker config predates the Vitest 4 plugin form).
 
 * * *
 
