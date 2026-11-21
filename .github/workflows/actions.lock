@@ -10,6 +10,8 @@ workflows:
         - 'actions/setup-node@v7.1.0'
         - 'determinatesystems/magic-nix-cache-action@v15'
         - 'determinatesystems/nix-installer-action@v23'
+    '.github/workflows/dependabot-auto-merge.yml':
+        - 'dependabot/fetch-metadata@v3.1.0'
     '.github/workflows/release.yml':
         - 'actions/checkout@v7.0.1'
         - 'determinatesystems/magic-nix-cache-action@v15'
@@ -29,6 +31,11 @@ dependencies:
         commit: 'sha1-949feb2413d6458794dcd2491c4babbbce0c15c1'
         owner_id: 44036562
         repo_id: 189476904
+    'dependabot/fetch-metadata@v3.1.0':
+        ref: 'v3.1.0'
+        commit: 'sha1-25dd0e34f4fe68f24cc83900b1fe3fe149efef98'
+        owner_id: 27347476
+        repo_id: 371068214
     'determinatesystems/magic-nix-cache-action@v15':
         ref: 'v15'
         commit: 'sha1-84c0677f58dcedf3b91f8223ce36a9ea5b3c84b7'
