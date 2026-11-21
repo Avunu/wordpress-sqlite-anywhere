@@ -2,8 +2,8 @@ version: 2
 
 # Keeps every ecosystem in this repo up to date. Updates land on `main` automatically
 # (see .github/workflows/dependabot-auto-merge.yml); release-please remains the gate for
-# actually cutting a release. Dep bumps use the `chore` type so they never force a
-# release on their own — they ride along with the next real release.
+# actually cutting a release. Dep bumps use the `fix(deps)` type, so each merged bump ships
+# as a patch release.
 #
 # The upstream driver submodule is NOT managed here: Dependabot's gitsubmodule
 # ecosystem follows branch HEAD, and we pin release tags (upstream-bump.yml).
@@ -16,7 +16,7 @@ updates:
     cooldown:
       default-days: 7
     commit-message:
-      prefix: chore
+      prefix: fix(deps)
     groups:
       github-actions:
         patterns: ["*"]
@@ -29,7 +29,7 @@ updates:
     cooldown:
       default-days: 7
     commit-message:
-      prefix: chore
+      prefix: fix(deps)
     groups:
       composer:
         patterns: ["*"]
@@ -44,7 +44,7 @@ updates:
     cooldown:
       default-days: 7
     commit-message:
-      prefix: chore
+      prefix: fix(deps)
     groups:
       driver-tools:
         patterns: ["*"]
@@ -62,7 +62,7 @@ updates:
     cooldown:
       default-days: 7
     commit-message:
-      prefix: chore
+      prefix: fix(deps)
     groups:
       publisher:
         patterns: ["*"]
@@ -74,7 +74,7 @@ updates:
     cooldown:
       default-days: 7
     commit-message:
-      prefix: chore
+      prefix: fix(deps)
     groups:
       d1-client:
         patterns: ["*"]
@@ -88,7 +88,7 @@ updates:
     cooldown:
       default-days: 7
     commit-message:
-      prefix: chore
+      prefix: fix(deps)
     labels: [dependencies]
     groups:
       turso-ext:
@@ -104,7 +104,7 @@ updates:
     cooldown:
       default-days: 7
     commit-message:
-      prefix: chore
+      prefix: fix(deps)
     groups:
       npm:
         patterns: ["*"]
@@ -122,7 +122,7 @@ updates:
     cooldown:
       default-days: 7
     commit-message:
-      prefix: chore
+      prefix: fix(deps)
     groups:
       nix:
         patterns: ["*"]
@@ -136,7 +136,7 @@ updates:
     cooldown:
       default-days: 7
     commit-message:
-      prefix: chore
+      prefix: fix(deps)
     labels: [dependencies]
     groups:
       pre-commit:
