@@ -13,6 +13,8 @@ updates:
     directory: /
     schedule:
       interval: daily
+    cooldown:
+      default-days: 7
     commit-message:
       prefix: chore
     groups:
@@ -24,6 +26,8 @@ updates:
     directory: /
     schedule:
       interval: daily
+    cooldown:
+      default-days: 7
     commit-message:
       prefix: chore
     groups:
@@ -37,6 +41,8 @@ updates:
     directory: /driver-tests/tools-project
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     commit-message:
       prefix: chore
     groups:
@@ -53,6 +59,8 @@ updates:
     directory: /packages/turso-snapshot-publisher
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     commit-message:
       prefix: chore
     groups:
@@ -63,6 +71,8 @@ updates:
     directory: /packages/php-ext-wp-d1-client
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     commit-message:
       prefix: chore
     groups:
@@ -91,6 +101,8 @@ updates:
     directory: /packages/d1-proxy-worker
     schedule:
       interval: daily
+    cooldown:
+      default-days: 7
     commit-message:
       prefix: chore
     groups:
@@ -107,6 +119,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     commit-message:
       prefix: chore
     groups:
