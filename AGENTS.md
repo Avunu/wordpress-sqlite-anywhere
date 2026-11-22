@@ -50,7 +50,7 @@ nix build .#zip                 # result/wordpress-sqlite-anywhere.zip
 
 - Conventional commits; release-please cuts releases from them (`composer.json` `version` is the
   single source of truth; the plugin header is stamped from it at build time and checked in CI).
-  Dependency bumps are `chore` so they never force a release. A driver bump is
+  Dependency bumps are `fix(deps)`, so each merged bump ships as a patch release. A driver bump is
   `feat(driver): bump bundled driver to vX.Y.Z`.
 - The upstream driver's test suites run against every backend through the thin subclasses in
   `driver-tests/remote/` and the options-filter seam (patch 0011). A test that a remote backend

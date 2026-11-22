@@ -2,8 +2,8 @@ version: 2
 
 # Keeps every ecosystem in this repo up to date. Updates land on `main` automatically
 # (see .github/workflows/dependabot-auto-merge.yml); release-please remains the gate for
-# actually cutting a release. Dep bumps use the `chore` type so they never force a
-# release on their own — they ride along with the next real release.
+# actually cutting a release. Dep bumps use the `fix(deps)` type, so each merged bump ships
+# as a patch release.
 #
 # The upstream driver submodule is NOT managed here: Dependabot's gitsubmodule
 # ecosystem follows branch HEAD, and we pin release tags (upstream-bump.yml).
@@ -13,8 +13,10 @@ updates:
     directory: /
     schedule:
       interval: daily
+    cooldown:
+      default-days: 7
     commit-message:
-      prefix: chore
+      prefix: fix(deps)
     groups:
       github-actions:
         patterns: ["*"]
@@ -24,8 +26,10 @@ updates:
     directory: /
     schedule:
       interval: daily
+    cooldown:
+      default-days: 7
     commit-message:
-      prefix: chore
+      prefix: fix(deps)
     groups:
       composer:
         patterns: ["*"]
@@ -37,8 +41,10 @@ updates:
     directory: /driver-tests/tools-project
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     commit-message:
-      prefix: chore
+      prefix: fix(deps)
     groups:
       driver-tools:
         patterns: ["*"]
@@ -53,8 +59,10 @@ updates:
     directory: /packages/turso-snapshot-publisher
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     commit-message:
-      prefix: chore
+      prefix: fix(deps)
     groups:
       publisher:
         patterns: ["*"]
@@ -63,10 +71,27 @@ updates:
     directory: /packages/php-ext-wp-d1-client
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     commit-message:
-      prefix: chore
+      prefix: fix(deps)
     groups:
       d1-client:
+        patterns: ["*"]
+
+  # The Turso extension crate (pooled HTTP client and embedded replica). The
+  # turso-embedded check builds it.
+  - package-ecosystem: cargo
+    directory: /packages/php-ext-wp-turso
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: fix(deps)
+    labels: [dependencies]
+    groups:
+      turso-ext:
         patterns: ["*"]
 
   # The D1 proxy worker. Its vitest config predates the Vite-plugin form that
@@ -76,8 +101,10 @@ updates:
     directory: /packages/d1-proxy-worker
     schedule:
       interval: daily
+    cooldown:
+      default-days: 7
     commit-message:
-      prefix: chore
+      prefix: fix(deps)
     groups:
       npm:
         patterns: ["*"]
@@ -92,8 +119,25 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     commit-message:
-      prefix: chore
+      prefix: fix(deps)
     groups:
       nix:
+        patterns: ["*"]
+
+  # The git hooks (.pre-commit-config.yaml): moves the rev of the published hook
+  # repositories. The pre-commit check runs them.
+  - package-ecosystem: pre-commit
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: fix(deps)
+    labels: [dependencies]
+    groups:
+      pre-commit:
         patterns: ["*"]

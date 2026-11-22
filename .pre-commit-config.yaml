@@ -1,0 +1,64 @@
+# Git hooks, run by prek (a pre-commit drop-in that needs no nix):
+#   uv tool install prek
+#   prek install -t pre-commit -t pre-push
+#   prek run --all-files
+#
+# The stages are the ones the nix hooks (git-hooks.nix) had: nixfmt, deadnix and
+# statix at commit time; PHPStan, PHPCS and cargo fmt at push time, over the whole
+# tree (pass_filenames: false). Tool versions match the nixpkgs pin in flake.lock.
+repos:
+  - repo: https://github.com/NixOS/nixfmt
+    rev: v1.5.0
+    hooks:
+      - id: nixfmt
+
+  - repo: https://github.com/astro/deadnix
+    rev: v1.3.2
+    hooks:
+      - id: deadnix
+
+  - repo: local
+    hooks:
+      # Pinned install: cargo install --locked --git https://github.com/oppiliappan/statix --rev 52530001bdbc8e94aae0d406a929c7ad7f09d9d1
+      - id: statix
+        name: statix (Nix lints)
+        entry: statix check
+        language: system
+        files: '\.nix$'
+        pass_filenames: false
+
+      # Pinned install: composer global require phpstan/phpstan:2.3.2
+      - id: phpstan
+        name: phpstan (level 8, WordPress-aware)
+        entry: composer phpstan
+        language: system
+        files: '\.php$|\.copy$'
+        pass_filenames: false
+        stages: [pre-push]
+
+      # Pinned install: composer global require squizlabs/php_codesniffer:4.0.4
+      - id: phpcs
+        name: phpcs (PSR-12, house-style paths)
+        entry: phpcs
+        language: system
+        files: '\.php$|\.copy$'
+        pass_filenames: false
+        stages: [pre-push]
+
+      # Locked: composer --working-dir=driver-tests/tools-project install
+      - id: phpcs-driver
+        name: phpcs (WordPress, driver overlays)
+        entry: driver-tests/tools-project/vendor/bin/phpcs --standard=phpcs-driver.xml.dist
+        language: system
+        files: '^(driver|driver-tests|plugin)/.*\.php$'
+        pass_filenames: false
+        stages: [pre-push]
+
+      # Not pinned: rustfmt comes from the contributor's Rust toolchain (the repo has no rust-toolchain file).
+      - id: cargo-fmt
+        name: cargo fmt --check (all crates)
+        entry: sh -c 'for crate in packages/turso-snapshot-publisher packages/php-ext-wp-d1-client packages/php-ext-wp-turso; do cargo fmt --manifest-path "$crate/Cargo.toml" --check || exit 1; done'
+        language: system
+        files: '\.rs$'
+        pass_filenames: false
+        stages: [pre-push]
